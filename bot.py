@@ -1,25 +1,10 @@
 import telebot
-import json
 from flask import Flask, request
-from datetime import datetime, timedelta
 
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-
-DATA_FILE = "data.json"
-
-def load_data():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
@@ -34,7 +19,7 @@ def index():
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🤖 Jasurbek bot 24/7 ishlayapti!")
+    bot.send_message(message.chat.id, "🤖 Jasurbekning 24/7 aqlli botiga xush kelibsiz!")
 
 @bot.message_handler(func=lambda message: True)
 def handle(message):
