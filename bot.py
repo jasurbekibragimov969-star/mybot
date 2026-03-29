@@ -35,7 +35,7 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Jasurbek super bot ishlayapti!"
+    return "Jasurbek PRO bot ishlayapti!"
 
 # ===== START =====
 @bot.message_handler(commands=['start'])
@@ -43,16 +43,18 @@ def start(message):
     bot.send_message(
         message.chat.id,
         "👋 Assalomu alaykum!\n\n"
-        "🤖 Men *Jasurbekning aqlli yordamchi botiman*\n\n"
+        "🤖 *Jasurbek PRO yordamchi bot*\n\n"
         "💡 Qila olaman:\n"
-        "• 📝 Vazifalarni saqlayman\n"
-        "• ⏰ Eslataman\n"
-        "• 💧 Sog‘liq maslahatlari beraman\n\n"
-        "✍️ Shunchaki yozing (masalan: *ertaga 18:00 uchrashuv*)",
+        "• 📝 Vazifa saqlash\n"
+        "• 🗑 O‘chirish\n"
+        "• 📊 Statistika\n"
+        "• ⏰ Eslatma\n"
+        "• 💧 Sog‘liq maslahat\n\n"
+        "✍️ Yoz: *ertaga 18:00 uchrashuv*",
         parse_mode="Markdown"
     )
 
-# ===== REMINDER LOOP =====
+# ===== REMINDER =====
 def reminder_loop():
     while True:
         data = load_data()
@@ -65,17 +67,17 @@ def reminder_loop():
 
 threading.Thread(target=reminder_loop, daemon=True).start()
 
-# ===== HEALTH LOOP =====
+# ===== HEALTH =====
 def health_loop():
     while True:
         data = load_data()
         for user_id in data:
             bot.send_message(user_id, "💧 Suv ichishni unutmang!")
-        time.sleep(3600)
+        time.sleep(7200)
 
 threading.Thread(target=health_loop, daemon=True).start()
 
-# ===== MESSAGE =====
+# ===== MAIN =====
 @bot.message_handler(func=lambda message: True)
 def handle(message):
     text = message.text.lower()
@@ -86,14 +88,36 @@ def handle(message):
     if user_id not in data:
         data[user_id] = {"tasks": []}
 
+    # ===== DELETE =====
+    if text.startswith("o'chir"):
+        try:
+            index = int(text.split()[1]) - 1
+            removed = data[user_id]["tasks"].pop(index)
+            save_data(data)
+            bot.send_message(message.chat.id, f"🗑 O‘chirildi:\n{removed['text']}")
+        except:
+            bot.send_message(message.chat.id, "❌ Format: o'chir 1")
+        return
+
+    # ===== STAT =====
+    if "stat" in text:
+        count = len(data[user_id]["tasks"])
+        bot.send_message(message.chat.id, f"📊 Jami vazifalar: {count}")
+        return
+
     # ===== SHOW TODAY =====
     if "bugun" in text and "nima" in text:
         today = datetime.now().strftime("%Y-%m-%d")
         tasks = [t["text"] for t in data[user_id]["tasks"] if t["date"] == today]
+
         if tasks:
-            bot.send_message(message.chat.id, "📅 Bugungi ishlar:\n" + "\n".join(tasks))
+            msg = "📅 Bugungi ishlar:\n"
+            for i, t in enumerate(tasks, 1):
+                msg += f"{i}. {t}\n"
         else:
-            bot.send_message(message.chat.id, "📭 Hech narsa yo‘q")
+            msg = "📭 Hech narsa yo‘q"
+
+        bot.send_message(message.chat.id, msg)
         return
 
     # ===== DATE =====
