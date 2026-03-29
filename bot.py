@@ -103,14 +103,125 @@ def handle(m):
         bot.send_message(m.chat.id, "Haftasiga 3-4 marta yuguring.")
         return
 
-    # KASALLIK
-    if text == "🤕 Bosh og‘riq":
-        bot.send_message(m.chat.id, "Dam oling, suv iching, paracetamol mumkin.")
-        return
+ # ===== KASALLIKLAR FULL =====
 
-    if text == "🦷 Tish og‘riq":
-        bot.send_message(m.chat.id, "Tuzli suv bilan chaying, dori ichish mumkin.")
-        return
+if text == "🤕 Bosh og‘riq":
+    bot.send_message(m.chat.id,
+    "🤕 Bosh og‘rig‘i ko‘pincha charchoq va stressdan keladi. Dam olish muhim. "
+    "Suv ichish yordam beradi. Iliq choy iching. "
+    "Massaj ham foydali. Paracetamol ichish mumkin. "
+    "Ko‘p telefon ishlatmang. Agar davom etsa shifokorga boring.")
+    return
+
+if text == "🦷 Tish og‘riq":
+    bot.send_message(m.chat.id,
+    "🦷 Tish og‘rig‘ida tuzli suv bilan og‘izni chayish foydali. "
+    "Issiq-sovuq ovqatdan saqlaning. "
+    "Og‘riq bo‘lsa ibuprofen ichish mumkin. "
+    "Tish tozaligiga e’tibor bering. "
+    "Qo‘l tekkizmang. "
+    "Agar ketmasa stomatologga boring.")
+    return
+
+if text == "🤧 Shamollash":
+    bot.send_message(m.chat.id,
+    "🤧 Shamollashda issiq choy iching. Limon va asal foydali. "
+    "Dam olish muhim. "
+    "Burunni tozalang. "
+    "Issiq kiyining. "
+    "Dori ichish mumkin. "
+    "Agar og‘irlashsa shifokorga boring.")
+    return
+
+if text == "🤒 Isitma":
+    bot.send_message(m.chat.id,
+    "🤒 Isitmada ko‘p suv ichish kerak. Dam oling. "
+    "Issiq kiyimdan saqlaning. "
+    "Paracetamol ichish mumkin. "
+    "Vitaminlar iste’mol qiling. "
+    "Haroratni kuzating. "
+    "Uzoq davom etsa shifokorga boring.")
+    return
+
+if text == "😖 Oshqozon og‘riq":
+    bot.send_message(m.chat.id,
+    "😖 Oshqozon og‘rig‘ida yengil ovqat yeyish kerak. "
+    "Gazli ichimliklardan saqlaning. "
+    "Iliq choy iching. "
+    "Ko‘p ovqat yemang. "
+    "Dori ichish mumkin. "
+    "Agar davom etsa shifokorga boring.")
+    return
+
+if text == "🦵 Oyoq og‘riq":
+    bot.send_message(m.chat.id,
+    "🦵 Oyoq og‘rig‘ida dam olish muhim. "
+    "Iliq suvga soling. "
+    "Massaj qiling. "
+    "Qulay oyoq kiyim kiying. "
+    "Dori ichish mumkin. "
+    "Agar ketmasa shifokorga boring.")
+    return
+
+if text == "🧍 Bel og‘riq":
+    bot.send_message(m.chat.id,
+    "🧍 Bel og‘rig‘ida dam olish kerak. "
+    "To‘g‘ri o‘tirish muhim. "
+    "Massaj yordam beradi. "
+    "Iliq kompress qo‘ying. "
+    "Dori ichish mumkin. "
+    "Agar ketmasa shifokorga boring.")
+    return
+
+if text == "🙆‍♂️ Bo‘yin og‘riq":
+    bot.send_message(m.chat.id,
+    "🙆‍♂️ Bo‘yin og‘rig‘ida telefonni kam ishlating. "
+    "Massaj qiling. "
+    "Iliq kompress qo‘ying. "
+    "To‘g‘ri yostiq ishlating. "
+    "Dori ichish mumkin. "
+    "Agar ketmasa shifokorga boring.")
+    return
+
+if text == "😵 Bosh aylanish":
+    bot.send_message(m.chat.id,
+    "😵 Bosh aylanishda dam olish kerak. "
+    "Suv iching. "
+    "Sekin harakat qiling. "
+    "Toza havo foydali. "
+    "Kamqonlikni tekshiring. "
+    "Agar davom etsa shifokorga boring.")
+    return
+
+if text == "😫 Stress":
+    bot.send_message(m.chat.id,
+    "😫 Stressda dam olish muhim. "
+    "Sayr qiling. "
+    "Sport bilan shug‘ullaning. "
+    "Yaxshi uxlang. "
+    "Telefonni kamaytiring. "
+    "Agar kuchli bo‘lsa mutaxassisga murojaat qiling.")
+    return
+
+if text == "😴 Uyqusizlik":
+    bot.send_message(m.chat.id,
+    "😴 Uyqusizlikda telefonni kamaytiring. "
+    "Har kuni bir vaqtda uxlang. "
+    "Qahva ichmang kechqurun. "
+    "Xonani qorong‘i qiling. "
+    "Dam oling. "
+    "Agar davom etsa shifokorga boring.")
+    return
+
+if text == "🤢 Ko‘ngil aynish":
+    bot.send_message(m.chat.id,
+    "🤢 Ko‘ngil aynishda yengil ovqat yeying. "
+    "Suv iching. "
+    "Dam oling. "
+    "Yog‘li ovqat yemang. "
+    "Zanjabil foydali. "
+    "Agar davom etsa shifokorga boring.")
+    return
 
     # XARAJAT
     if text == "💰 Xarajat":
