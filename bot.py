@@ -5,6 +5,7 @@ from flask import Flask, request
 from datetime import datetime, timedelta
 import threading
 import time
+from telebot.types import ReplyKeyboardMarkup
 
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 
@@ -25,6 +26,14 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# ===== MENU =====
+def menu():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("📅 Bugungi ishlar", "➕ Vazifa qo‘shish")
+    markup.add("🗑 O‘chirish", "📊 Statistika")
+    markup.add("💧 Sog‘liq")
+    return markup
+
 # ===== WEBHOOK =====
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
@@ -35,7 +44,7 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Jasurbek PRO bot ishlayapti!"
+    return "Jasurbek FINAL bot ishlayapti!"
 
 # ===== START =====
 @bot.message_handler(commands=['start'])
@@ -43,15 +52,10 @@ def start(message):
     bot.send_message(
         message.chat.id,
         "👋 Assalomu alaykum!\n\n"
-        "🤖 *Jasurbek PRO yordamchi bot*\n\n"
-        "💡 Qila olaman:\n"
-        "• 📝 Vazifa saqlash\n"
-        "• 🗑 O‘chirish\n"
-        "• 📊 Statistika\n"
-        "• ⏰ Eslatma\n"
-        "• 💧 Sog‘liq maslahat\n\n"
-        "✍️ Yoz: *ertaga 18:00 uchrashuv*",
-        parse_mode="Markdown"
+        "🤖 *Jasurbek FINAL yordamchi bot*\n\n"
+        "👇 Tugmalardan foydalaning",
+        parse_mode="Markdown",
+        reply_markup=menu()
     )
 
 # ===== REMINDER =====
@@ -67,16 +71,6 @@ def reminder_loop():
 
 threading.Thread(target=reminder_loop, daemon=True).start()
 
-# ===== HEALTH =====
-def health_loop():
-    while True:
-        data = load_data()
-        for user_id in data:
-            bot.send_message(user_id, "💧 Suv ichishni unutmang!")
-        time.sleep(7200)
-
-threading.Thread(target=health_loop, daemon=True).start()
-
 # ===== MAIN =====
 @bot.message_handler(func=lambda message: True)
 def handle(message):
@@ -88,25 +82,8 @@ def handle(message):
     if user_id not in data:
         data[user_id] = {"tasks": []}
 
-    # ===== DELETE =====
-    if text.startswith("o'chir"):
-        try:
-            index = int(text.split()[1]) - 1
-            removed = data[user_id]["tasks"].pop(index)
-            save_data(data)
-            bot.send_message(message.chat.id, f"🗑 O‘chirildi:\n{removed['text']}")
-        except:
-            bot.send_message(message.chat.id, "❌ Format: o'chir 1")
-        return
-
-    # ===== STAT =====
-    if "stat" in text:
-        count = len(data[user_id]["tasks"])
-        bot.send_message(message.chat.id, f"📊 Jami vazifalar: {count}")
-        return
-
-    # ===== SHOW TODAY =====
-    if "bugun" in text and "nima" in text:
+    # ===== BUGUNGI =====
+    if text == "📅 bugungi ishlar":
         today = datetime.now().strftime("%Y-%m-%d")
         tasks = [t["text"] for t in data[user_id]["tasks"] if t["date"] == today]
 
@@ -118,6 +95,46 @@ def handle(message):
             msg = "📭 Hech narsa yo‘q"
 
         bot.send_message(message.chat.id, msg)
+        return
+
+    # ===== STAT =====
+    if text == "📊 statistika":
+        count = len(data[user_id]["tasks"])
+        bot.send_message(message.chat.id, f"📊 Jami vazifalar: {count}")
+        return
+
+    # ===== SOG‘LIQ =====
+    if text == "💧 sog‘liq":
+        bot.send_message(message.chat.id, "💧 Suv iching!\n🚶 Harakat qiling!\n😴 Dam oling!")
+        return
+
+    # ===== O‘CHIRISH =====
+    if text == "🗑 o‘chirish":
+        tasks = data[user_id]["tasks"]
+        if tasks:
+            msg = "🗑 Qaysi birini o‘chirasiz?\n"
+            for i, t in enumerate(tasks, 1):
+                msg += f"{i}. {t['text']}\n"
+            msg += "\n✍️ Masalan: o'chir 1"
+        else:
+            msg = "📭 Hech narsa yo‘q"
+
+        bot.send_message(message.chat.id, msg)
+        return
+
+    if text.startswith("o'chir"):
+        try:
+            index = int(text.split()[1]) - 1
+            removed = data[user_id]["tasks"].pop(index)
+            save_data(data)
+            bot.send_message(message.chat.id, f"🗑 O‘chirildi:\n{removed['text']}")
+        except:
+            bot.send_message(message.chat.id, "❌ Format: o'chir 1")
+        return
+
+    # ===== VAZIFA QO‘SHISH =====
+    if text == "➕ vazifa qo‘shish":
+        bot.send_message(message.chat.id, "✍️ Vazifani yozing:\n(masalan: ertaga 18:00 sport)")
         return
 
     # ===== DATE =====
@@ -139,14 +156,9 @@ def handle(message):
 
     save_data(data)
 
-    # ===== RESPONSE =====
     msg = "✅ Saqlandi!"
-
     if task_time:
         msg += f"\n⏰ {task_time} da eslataman"
-
-    if "sport" in text or "yur" in text:
-        msg += "\n💪 Zo‘r! Sog‘liq muhim"
 
     bot.send_message(message.chat.id, msg)
 
