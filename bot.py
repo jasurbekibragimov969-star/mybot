@@ -1,9 +1,7 @@
 import telebot
 import json
-import re
 import random
 import threading
-from datetime import datetime
 from telebot.types import ReplyKeyboardMarkup
 from flask import Flask
 
@@ -11,7 +9,7 @@ from flask import Flask
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 bot = telebot.TeleBot(TOKEN)
 
-# ===== WEB SERVER (503 FIX) =====
+# ===== WEB SERVER =====
 app = Flask(__name__)
 
 @app.route('/')
@@ -37,7 +35,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# ===== MENU =====
+# ===== MENUS =====
 def main_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
     m.add("📅 Vazifalar", "➕ Qo‘shish")
@@ -67,11 +65,13 @@ def illness_menu():
 # ===== START =====
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id,
-    "👋 Assalomu alaykum!\n\n🤖 SUPER YORDAMCHI BOT",
-    reply_markup=main_menu())
+    bot.send_message(
+        m.chat.id,
+        "👋 Assalomu alaykum!\n\n🤖 Aqlli yordamchi botga xush kelibsiz!",
+        reply_markup=main_menu()
+    )
 
-# ===== MAIN =====
+# ===== MAIN HANDLER =====
 @bot.message_handler(func=lambda m: True)
 def handle(m):
     text = m.text
@@ -81,7 +81,7 @@ def handle(m):
     if user_id not in data:
         data[user_id] = {"tasks": [], "money": []}
 
-    # MENU
+    # ===== MENU =====
     if text == "💧 Sog‘liq":
         bot.send_message(m.chat.id, "💧 Sog‘liq", reply_markup=health_menu())
         return
@@ -94,138 +94,75 @@ def handle(m):
         bot.send_message(m.chat.id, "🔙 Menu", reply_markup=main_menu())
         return
 
-    # SOG‘LIQ
+    # ===== SOG‘LIQ =====
     if text == "💧 Suv ichish":
-        bot.send_message(m.chat.id, "Kuniga 2-3 litr suv iching.")
+        bot.send_message(m.chat.id, "Kuniga 2-3 litr suv iching. Ertalab suv ichish foydali.")
         return
 
     if text == "🏃 Yugurish":
-        bot.send_message(m.chat.id, "Haftasiga 3-4 marta yuguring.")
+        bot.send_message(m.chat.id, "Haftasiga 3-4 marta yugurish sog‘liq uchun foydali.")
         return
 
- # ===== KASALLIKLAR FULL =====
+    if text == "🍎 Ovqatlanish":
+        bot.send_message(m.chat.id, "Ko‘proq sabzavot va foydali ovqat iste’mol qiling.")
+        return
 
-if text == "🤕 Bosh og‘riq":
-    bot.send_message(m.chat.id,
-    "🤕 Bosh og‘rig‘i ko‘pincha charchoq va stressdan keladi. Dam olish muhim. "
-    "Suv ichish yordam beradi. Iliq choy iching. "
-    "Massaj ham foydali. Paracetamol ichish mumkin. "
-    "Ko‘p telefon ishlatmang. Agar davom etsa shifokorga boring.")
-    return
+    if text == "😴 Uyqu":
+        bot.send_message(m.chat.id, "Kuniga 7-8 soat uxlash sog‘liq uchun muhim.")
+        return
 
-if text == "🦷 Tish og‘riq":
-    bot.send_message(m.chat.id,
-    "🦷 Tish og‘rig‘ida tuzli suv bilan og‘izni chayish foydali. "
-    "Issiq-sovuq ovqatdan saqlaning. "
-    "Og‘riq bo‘lsa ibuprofen ichish mumkin. "
-    "Tish tozaligiga e’tibor bering. "
-    "Qo‘l tekkizmang. "
-    "Agar ketmasa stomatologga boring.")
-    return
+    # ===== KASALLIKLAR =====
+    if text == "🤕 Bosh og‘riq":
+        bot.send_message(m.chat.id, "Dam oling, suv iching, massaj qiling va kerak bo‘lsa paracetamol iching.")
+        return
 
-if text == "🤧 Shamollash":
-    bot.send_message(m.chat.id,
-    "🤧 Shamollashda issiq choy iching. Limon va asal foydali. "
-    "Dam olish muhim. "
-    "Burunni tozalang. "
-    "Issiq kiyining. "
-    "Dori ichish mumkin. "
-    "Agar og‘irlashsa shifokorga boring.")
-    return
+    if text == "🦷 Tish og‘riq":
+        bot.send_message(m.chat.id, "Tuzli suv bilan og‘izni chaying, issiq-sovuqdan saqlaning va dori iching.")
+        return
 
-if text == "🤒 Isitma":
-    bot.send_message(m.chat.id,
-    "🤒 Isitmada ko‘p suv ichish kerak. Dam oling. "
-    "Issiq kiyimdan saqlaning. "
-    "Paracetamol ichish mumkin. "
-    "Vitaminlar iste’mol qiling. "
-    "Haroratni kuzating. "
-    "Uzoq davom etsa shifokorga boring.")
-    return
+    if text == "🤧 Shamollash":
+        bot.send_message(m.chat.id, "Issiq choy iching, dam oling va issiq kiying.")
+        return
 
-if text == "😖 Oshqozon og‘riq":
-    bot.send_message(m.chat.id,
-    "😖 Oshqozon og‘rig‘ida yengil ovqat yeyish kerak. "
-    "Gazli ichimliklardan saqlaning. "
-    "Iliq choy iching. "
-    "Ko‘p ovqat yemang. "
-    "Dori ichish mumkin. "
-    "Agar davom etsa shifokorga boring.")
-    return
+    if text == "🤒 Isitma":
+        bot.send_message(m.chat.id, "Ko‘p suv iching, dam oling va paracetamol ichish mumkin.")
+        return
 
-if text == "🦵 Oyoq og‘riq":
-    bot.send_message(m.chat.id,
-    "🦵 Oyoq og‘rig‘ida dam olish muhim. "
-    "Iliq suvga soling. "
-    "Massaj qiling. "
-    "Qulay oyoq kiyim kiying. "
-    "Dori ichish mumkin. "
-    "Agar ketmasa shifokorga boring.")
-    return
+    if text == "😖 Oshqozon og‘riq":
+        bot.send_message(m.chat.id, "Yengil ovqat yeying va gazli ichimliklardan saqlaning.")
+        return
 
-if text == "🧍 Bel og‘riq":
-    bot.send_message(m.chat.id,
-    "🧍 Bel og‘rig‘ida dam olish kerak. "
-    "To‘g‘ri o‘tirish muhim. "
-    "Massaj yordam beradi. "
-    "Iliq kompress qo‘ying. "
-    "Dori ichish mumkin. "
-    "Agar ketmasa shifokorga boring.")
-    return
+    if text == "🦵 Oyoq og‘riq":
+        bot.send_message(m.chat.id, "Dam oling, massaj qiling va iliq suv yordam beradi.")
+        return
 
-if text == "🙆‍♂️ Bo‘yin og‘riq":
-    bot.send_message(m.chat.id,
-    "🙆‍♂️ Bo‘yin og‘rig‘ida telefonni kam ishlating. "
-    "Massaj qiling. "
-    "Iliq kompress qo‘ying. "
-    "To‘g‘ri yostiq ishlating. "
-    "Dori ichish mumkin. "
-    "Agar ketmasa shifokorga boring.")
-    return
+    if text == "🧍 Bel og‘riq":
+        bot.send_message(m.chat.id, "Dam oling va to‘g‘ri o‘tirishga e’tibor bering.")
+        return
 
-if text == "😵 Bosh aylanish":
-    bot.send_message(m.chat.id,
-    "😵 Bosh aylanishda dam olish kerak. "
-    "Suv iching. "
-    "Sekin harakat qiling. "
-    "Toza havo foydali. "
-    "Kamqonlikni tekshiring. "
-    "Agar davom etsa shifokorga boring.")
-    return
+    if text == "🙆‍♂️ Bo‘yin og‘riq":
+        bot.send_message(m.chat.id, "Telefonni kam ishlating va massaj qiling.")
+        return
 
-if text == "😫 Stress":
-    bot.send_message(m.chat.id,
-    "😫 Stressda dam olish muhim. "
-    "Sayr qiling. "
-    "Sport bilan shug‘ullaning. "
-    "Yaxshi uxlang. "
-    "Telefonni kamaytiring. "
-    "Agar kuchli bo‘lsa mutaxassisga murojaat qiling.")
-    return
+    if text == "😵 Bosh aylanish":
+        bot.send_message(m.chat.id, "Dam oling va suv iching.")
+        return
 
-if text == "😴 Uyqusizlik":
-    bot.send_message(m.chat.id,
-    "😴 Uyqusizlikda telefonni kamaytiring. "
-    "Har kuni bir vaqtda uxlang. "
-    "Qahva ichmang kechqurun. "
-    "Xonani qorong‘i qiling. "
-    "Dam oling. "
-    "Agar davom etsa shifokorga boring.")
-    return
+    if text == "😫 Stress":
+        bot.send_message(m.chat.id, "Dam oling, sayr qiling va sport bilan shug‘ullaning.")
+        return
 
-if text == "🤢 Ko‘ngil aynish":
-    bot.send_message(m.chat.id,
-    "🤢 Ko‘ngil aynishda yengil ovqat yeying. "
-    "Suv iching. "
-    "Dam oling. "
-    "Yog‘li ovqat yemang. "
-    "Zanjabil foydali. "
-    "Agar davom etsa shifokorga boring.")
-    return
+    if text == "😴 Uyqusizlik":
+        bot.send_message(m.chat.id, "Telefonni kamaytiring va bir vaqtda uxlashga odatlaning.")
+        return
 
-    # XARAJAT
+    if text == "🤢 Ko‘ngil aynish":
+        bot.send_message(m.chat.id, "Yengil ovqat yeying va dam oling.")
+        return
+
+    # ===== XARAJAT =====
     if text == "💰 Xarajat":
-        bot.send_message(m.chat.id, "Summani yozing")
+        bot.send_message(m.chat.id, "Summani yozing:")
         return
 
     if text.isdigit():
@@ -234,19 +171,20 @@ if text == "🤢 Ko‘ngil aynish":
         bot.send_message(m.chat.id, "Qo‘shildi")
         return
 
-    # STAT
+    # ===== STAT =====
     if text == "📊 Statistika":
         total = sum(data[user_id]["money"])
         bot.send_message(m.chat.id, f"Jami: {total}")
         return
 
-    # VAZIFA
+    # ===== VAZIFA =====
     if text == "📅 Vazifalar":
-        bot.send_message(m.chat.id, "\n".join(data[user_id]["tasks"]) if data[user_id]["tasks"] else "Yo‘q")
+        tasks = data[user_id]["tasks"]
+        bot.send_message(m.chat.id, "\n".join(tasks) if tasks else "Yo‘q")
         return
 
     if text == "➕ Qo‘shish":
-        bot.send_message(m.chat.id, "Vazifa yozing")
+        bot.send_message(m.chat.id, "Vazifa yozing (masalan: yugurish 18:00)")
         return
 
     if ":" in text:
@@ -255,7 +193,7 @@ if text == "🤢 Ko‘ngil aynish":
         bot.send_message(m.chat.id, "Saqlandi")
         return
 
-    # MOTIVATSIYA
+    # ===== MOTIVATSIYA =====
     if text == "🔥 Motivatsiya":
         bot.send_message(m.chat.id, random.choice([
             "🔥 Harakat qil!",
