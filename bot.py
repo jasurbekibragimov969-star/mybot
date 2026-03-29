@@ -5,6 +5,7 @@ from flask import Flask, request
 from datetime import datetime, timedelta
 import threading
 import time
+import random
 from telebot.types import ReplyKeyboardMarkup
 
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
@@ -31,8 +32,17 @@ def menu():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📅 Bugungi ishlar", "➕ Vazifa qo‘shish")
     markup.add("🗑 O‘chirish", "📊 Statistika")
-    markup.add("💧 Sog‘liq")
+    markup.add("💧 Sog‘liq", "🔥 Motivatsiya")
     return markup
+
+# ===== MOTIVATION =====
+motivations = [
+    "🔥 Bugun boshlamasang, ertaga ham boshlamaysan!",
+    "💪 Harakat qil — natija keladi!",
+    "🚀 Kichik qadamlar katta natija beradi!",
+    "😎 Sen uddalaysan!",
+    "🏆 Bugun o‘zingni yeng!"
+]
 
 # ===== WEBHOOK =====
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -44,7 +54,7 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Jasurbek FINAL bot ishlayapti!"
+    return "SUPER BOT ishlayapti!"
 
 # ===== START =====
 @bot.message_handler(commands=['start'])
@@ -52,8 +62,14 @@ def start(message):
     bot.send_message(
         message.chat.id,
         "👋 Assalomu alaykum!\n\n"
-        "🤖 *Jasurbek FINAL yordamchi bot*\n\n"
-        "👇 Tugmalardan foydalaning",
+        "🤖 *Bu oddiy bot emas...*\n\n"
+        "🔥 Men sizning shaxsiy yordamchingizman:\n\n"
+        "📝 Vazifalarni boshqaraman\n"
+        "⏰ O‘zim eslataman\n"
+        "💧 Sog‘liqni nazorat qilaman\n"
+        "📊 Natijani ko‘rsataman\n"
+        "🔥 Motivatsiya beraman\n\n"
+        "👇 Boshlash uchun tugmani bosing!",
         parse_mode="Markdown",
         reply_markup=menu()
     )
@@ -62,11 +78,16 @@ def start(message):
 def reminder_loop():
     while True:
         data = load_data()
-        now = datetime.now().strftime("%H:%M")
+        now = datetime.now().strftime("%H:%M %d.%m.%Y")
+
         for user_id in data:
             for task in data[user_id]["tasks"]:
                 if task["time"] == now:
-                    bot.send_message(user_id, f"⏰ Eslatma:\n👉 {task['text']}")
+                    bot.send_message(
+                        user_id,
+                        f"⏰ VAQT KELDI!\n\n👉 {task['text']}\n\n🔥 Hozir bajarish kerak!"
+                    )
+
         time.sleep(60)
 
 threading.Thread(target=reminder_loop, daemon=True).start()
@@ -82,40 +103,54 @@ def handle(message):
     if user_id not in data:
         data[user_id] = {"tasks": []}
 
-    # ===== BUGUNGI =====
+    # ===== BUTTONS =====
     if text == "📅 bugungi ishlar":
-        today = datetime.now().strftime("%Y-%m-%d")
-        tasks = [t["text"] for t in data[user_id]["tasks"] if t["date"] == today]
+        today = datetime.now().strftime("%d.%m.%Y")
+        tasks = [t["text"] for t in data[user_id]["tasks"] if today in t["time"]]
 
         if tasks:
-            msg = "📅 Bugungi ishlar:\n"
+            msg = "📅 Bugungi ishlar:\n\n"
             for i, t in enumerate(tasks, 1):
                 msg += f"{i}. {t}\n"
         else:
-            msg = "📭 Hech narsa yo‘q"
+            msg = "📭 Bugun vazifa yo‘q"
 
         bot.send_message(message.chat.id, msg)
         return
 
-    # ===== STAT =====
     if text == "📊 statistika":
         count = len(data[user_id]["tasks"])
         bot.send_message(message.chat.id, f"📊 Jami vazifalar: {count}")
         return
 
-    # ===== SOG‘LIQ =====
     if text == "💧 sog‘liq":
-        bot.send_message(message.chat.id, "💧 Suv iching!\n🚶 Harakat qiling!\n😴 Dam oling!")
+        bot.send_message(
+            message.chat.id,
+            "💧 Suv iching!\n🚶 10 minut yurib keling!\n😴 Dam oling!"
+        )
         return
 
-    # ===== O‘CHIRISH =====
+    if text == "🔥 motivatsiya":
+        bot.send_message(message.chat.id, random.choice(motivations))
+        return
+
+    if text == "➕ vazifa qo‘shish":
+        bot.send_message(
+            message.chat.id,
+            "✍️ Vazifani yozing:\n\n"
+            "Masalan:\n"
+            "👉 yugurish 18:00 30.03.2026\n\n"
+            "Men sizga o‘zim eslataman 😉"
+        )
+        return
+
     if text == "🗑 o‘chirish":
         tasks = data[user_id]["tasks"]
         if tasks:
-            msg = "🗑 Qaysi birini o‘chirasiz?\n"
+            msg = "🗑 Qaysi birini o‘chirasiz?\n\n"
             for i, t in enumerate(tasks, 1):
                 msg += f"{i}. {t['text']}\n"
-            msg += "\n✍️ Masalan: o'chir 1"
+            msg += "\n✍️ o'chir 1 deb yozing"
         else:
             msg = "📭 Hech narsa yo‘q"
 
@@ -132,35 +167,31 @@ def handle(message):
             bot.send_message(message.chat.id, "❌ Format: o'chir 1")
         return
 
-    # ===== VAZIFA QO‘SHISH =====
-    if text == "➕ vazifa qo‘shish":
-        bot.send_message(message.chat.id, "✍️ Vazifani yozing:\n(masalan: ertaga 18:00 sport)")
+    # ===== SMART PARSE =====
+    time_match = re.search(r"\d{1,2}:\d{2}", text)
+    date_match = re.search(r"\d{2}\.\d{2}\.\d{4}", text)
+
+    if time_match and date_match:
+        task_time = f"{time_match.group()} {date_match.group()}"
+
+        data[user_id]["tasks"].append({
+            "text": message.text,
+            "time": task_time
+        })
+
+        save_data(data)
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ Saqlandi!\n⏰ {task_time} da eslataman\n\n🔥 Unutmang — bajarish kerak!"
+        )
         return
 
-    # ===== DATE =====
-    if "ertaga" in text:
-        date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    else:
-        date = datetime.now().strftime("%Y-%m-%d")
-
-    # ===== TIME =====
-    time_match = re.search(r"\d{1,2}:\d{2}", text)
-    task_time = time_match.group() if time_match else ""
-
-    # ===== SAVE =====
-    data[user_id]["tasks"].append({
-        "text": message.text,
-        "date": date,
-        "time": task_time
-    })
-
-    save_data(data)
-
-    msg = "✅ Saqlandi!"
-    if task_time:
-        msg += f"\n⏰ {task_time} da eslataman"
-
-    bot.send_message(message.chat.id, msg)
+    # ===== DEFAULT =====
+    bot.send_message(
+        message.chat.id,
+        "🤖 Tushunmadim...\n\n👉 Tugmalardan foydalaning yoki to‘g‘ri formatda yozing"
+    )
 
 # ===== RUN =====
 if __name__ == "__main__":
