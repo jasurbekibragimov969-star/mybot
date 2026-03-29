@@ -2,21 +2,30 @@ import telebot
 import json
 import re
 import random
-from flask import Flask, request
-from datetime import datetime
 import threading
-import time
+from datetime import datetime
 from telebot.types import ReplyKeyboardMarkup
+from flask import Flask
 
+# ===== TOKEN =====
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
-ADMIN_ID = 6344661867
-
 bot = telebot.TeleBot(TOKEN)
+
+# ===== WEB SERVER (503 FIX) =====
 app = Flask(__name__)
 
-DATA_FILE = "data.json"
+@app.route('/')
+def home():
+    return "Bot ishlayapti!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
+
+threading.Thread(target=run_web).start()
 
 # ===== DATA =====
+DATA_FILE = "data.json"
+
 def load_data():
     try:
         with open(DATA_FILE, "r") as f:
@@ -33,56 +42,33 @@ def main_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
     m.add("📅 Vazifalar", "➕ Qo‘shish")
     m.add("💰 Xarajat", "📊 Statistika")
-    m.add("💧 Sog‘liq", "🔥 Motivatsiya")
-    m.add("📞 Admin")
+    m.add("💧 Sog‘liq", "🩺 Kasalliklar")
+    m.add("🔥 Motivatsiya")
     return m
 
 def health_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
     m.add("💧 Suv ichish", "🏃 Yugurish")
     m.add("🍎 Ovqatlanish", "😴 Uyqu")
-    m.add("🩺 Kasalliklar")
     m.add("🔙 Orqaga")
     return m
 
 def illness_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("🤕 Bosh og‘riq", "🤧 Shamollash")
-    m.add("🤒 Isitma", "😖 Oshqozon")
+    m.add("🤕 Bosh og‘riq", "🦷 Tish og‘riq")
+    m.add("🤧 Shamollash", "🤒 Isitma")
+    m.add("😖 Oshqozon og‘riq", "🦵 Oyoq og‘riq")
+    m.add("🧍 Bel og‘riq", "🙆‍♂️ Bo‘yin og‘riq")
     m.add("😵 Bosh aylanish", "😫 Stress")
     m.add("😴 Uyqusizlik", "🤢 Ko‘ngil aynish")
     m.add("🔙 Orqaga")
     return m
 
-# ===== MOTIVATION =====
-motivations = [
-"🔥 Bugun boshlamasang, ertaga ham boshlamaysan!",
-"💪 Harakat qil — natija keladi!",
-"🚀 Kichik qadamlar katta natija beradi!",
-"😎 Sen uddalaysan!",
-"🏆 O‘zingni yeng!",
-"🔥 Intizom = muvaffaqiyat",
-"💯 Bugun ishlasang ertaga dam olasan",
-"⚡ Harakatda baraka bor",
-"🔥 Orzular harakatni talab qiladi",
-"💪 Taslim bo‘lma!",
-"🚀 Har kun yangi imkoniyat",
-"😎 Sen kuchlisan!",
-"🏆 Maqsad sari bor!",
-"🔥 Bugun zo‘r kun!",
-"💯 O‘zingga ishoning",
-"⚡ Harakat qil!",
-"🔥 Yengil yo‘l yo‘q",
-"💪 Ishla va natijani ko‘r",
-"🚀 Boshlash — eng muhim qadam",
-"😎 Sen uddalaysan!"
-]
-
 # ===== START =====
 @bot.message_handler(commands=['start'])
-def start(msg):
-    bot.send_message(msg.chat.id,
-    "👋 Assalomu alaykum!\n\n🤖 SUPER YORDAMCHI BOT\n\n👇 Men sizga hamma narsada yordam beraman!",
+def start(m):
+    bot.send_message(m.chat.id,
+    "👋 Assalomu alaykum!\n\n🤖 SUPER YORDAMCHI BOT",
     reply_markup=main_menu())
 
 # ===== MAIN =====
@@ -95,9 +81,9 @@ def handle(m):
     if user_id not in data:
         data[user_id] = {"tasks": [], "money": []}
 
-    # ===== MENU =====
+    # MENU
     if text == "💧 Sog‘liq":
-        bot.send_message(m.chat.id, "💧 Sog‘liq bo‘limi", reply_markup=health_menu())
+        bot.send_message(m.chat.id, "💧 Sog‘liq", reply_markup=health_menu())
         return
 
     if text == "🩺 Kasalliklar":
@@ -105,98 +91,69 @@ def handle(m):
         return
 
     if text == "🔙 Orqaga":
-        bot.send_message(m.chat.id, "🔙 Asosiy menu", reply_markup=main_menu())
+        bot.send_message(m.chat.id, "🔙 Menu", reply_markup=main_menu())
         return
 
-    # ===== HEALTH INFO =====
+    # SOG‘LIQ
     if text == "💧 Suv ichish":
-        bot.send_message(m.chat.id,
-        "💧 Kuniga 2-3 litr suv iching.\n\n"
-        "• Ertalab 1 stakan\n"
-        "• Ovqatdan oldin\n"
-        "• Kun davomida bo‘lib iching\n\n"
-        "❌ Juda ko‘p birdan ichmang!")
+        bot.send_message(m.chat.id, "Kuniga 2-3 litr suv iching.")
         return
 
     if text == "🏃 Yugurish":
-        bot.send_message(m.chat.id,
-        "🏃 Yugurish:\n\n"
-        "• Haftasiga 3-4 marta\n"
-        "• 15-30 minut\n"
-        "• Sekin boshlang\n"
-        "• Nafasni tekis oling\n\n"
-        "🔥 Juda foydali!")
+        bot.send_message(m.chat.id, "Haftasiga 3-4 marta yuguring.")
         return
 
-    if text == "🍎 Ovqatlanish":
-        bot.send_message(m.chat.id,
-        "🍎 To‘g‘ri ovqat:\n\n"
-        "• Ko‘proq sabzavot\n"
-        "• Kam shakar\n"
-        "• Fast food kamroq\n\n"
-        "💪 Sog‘lom hayot!")
-        return
-
-    if text == "😴 Uyqu":
-        bot.send_message(m.chat.id,
-        "😴 Uyqu:\n\n"
-        "• 7-8 soat\n"
-        "• Bir vaqtda uxlang\n"
-        "• Telefon kamroq ishlating")
-        return
-
-    # ===== ILLNESS =====
+    # KASALLIK
     if text == "🤕 Bosh og‘riq":
-        bot.send_message(m.chat.id,
-        "🤕 Bosh og‘riq:\n\nDam oling, suv iching\nParacetamol mumkin")
+        bot.send_message(m.chat.id, "Dam oling, suv iching, paracetamol mumkin.")
         return
 
-    if text == "🤧 Shamollash":
-        bot.send_message(m.chat.id,
-        "🤧 Shamollash:\n\nIssiq choy, asal, limon\nDam oling")
+    if text == "🦷 Tish og‘riq":
+        bot.send_message(m.chat.id, "Tuzli suv bilan chaying, dori ichish mumkin.")
         return
 
-    if text == "🤒 Isitma":
-        bot.send_message(m.chat.id,
-        "🤒 Isitma:\n\nKo‘p suv iching\nParacetamol")
+    # XARAJAT
+    if text == "💰 Xarajat":
+        bot.send_message(m.chat.id, "Summani yozing")
         return
 
-    if text == "😖 Oshqozon":
-        bot.send_message(m.chat.id,
-        "😖 Oshqozon:\n\nYengil ovqat\nGazli ichimlik yo‘q")
+    if text.isdigit():
+        data[user_id]["money"].append(int(text))
+        save_data(data)
+        bot.send_message(m.chat.id, "Qo‘shildi")
         return
 
-    if text == "😵 Bosh aylanish":
-        bot.send_message(m.chat.id,
-        "😵 Dam oling, suv iching")
+    # STAT
+    if text == "📊 Statistika":
+        total = sum(data[user_id]["money"])
+        bot.send_message(m.chat.id, f"Jami: {total}")
         return
 
-    if text == "😫 Stress":
-        bot.send_message(m.chat.id,
-        "😫 Dam oling, sayr qiling")
+    # VAZIFA
+    if text == "📅 Vazifalar":
+        bot.send_message(m.chat.id, "\n".join(data[user_id]["tasks"]) if data[user_id]["tasks"] else "Yo‘q")
         return
 
-    if text == "😴 Uyqusizlik":
-        bot.send_message(m.chat.id,
-        "😴 Telefonni kam ishlating, dam oling")
+    if text == "➕ Qo‘shish":
+        bot.send_message(m.chat.id, "Vazifa yozing")
         return
 
-    if text == "🤢 Ko‘ngil aynish":
-        bot.send_message(m.chat.id,
-        "🤢 Yengil ovqat, dam oling")
+    if ":" in text:
+        data[user_id]["tasks"].append(text)
+        save_data(data)
+        bot.send_message(m.chat.id, "Saqlandi")
         return
 
-    # ===== MOTIVATION =====
+    # MOTIVATSIYA
     if text == "🔥 Motivatsiya":
-        bot.send_message(m.chat.id, random.choice(motivations))
-        return
-
-    # ===== ADMIN =====
-    if text == "📞 Admin":
-        bot.send_message(m.chat.id, "Admin: @zkurtuve")
+        bot.send_message(m.chat.id, random.choice([
+            "🔥 Harakat qil!",
+            "💪 Taslim bo‘lma!",
+            "🚀 Oldinga yur!"
+        ]))
         return
 
     bot.send_message(m.chat.id, "🤖 Tugmalardan foydalaning!")
 
-print("🚀 SUPER BOT ISHLAYAPTI")
+print("🚀 BOT ISHLAYAPTI")
 bot.infinity_polling()
