@@ -2,9 +2,9 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup
 import threading
 from flask import Flask
-from datetime import datetime
+from datetime import datetime, timedelta
 
-TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
+TOKEN = "SENING_TOKENING"
 bot = telebot.TeleBot(TOKEN)
 
 # ===== WEB =====
@@ -100,7 +100,6 @@ def handle(m):
         bot.send_message(user_id, "👨‍🏫 O‘qituvchilar ro‘yxati", reply_markup=teachers_menu())
         return
 
-    # ⚠️ MUHIM TUZATILDI
     if text.startswith("👨‍🏫 O‘qituvchi"):
         bot.send_message(user_id,
         "👨‍🏫 O‘qituvchi haqida ma’lumot:\n\nIsm: ---\nFan: ---\nToifa: ---")
@@ -142,12 +141,14 @@ def handle(m):
 
         step = logged_users[user_id].get("step")
 
+        # USERNAME
         if step == "login_user":
             logged_users[user_id]["username"] = text
             logged_users[user_id]["step"] = "login_pass"
             bot.send_message(user_id, "🔒 Parol kiriting:")
             return
 
+        # PASSWORD
         if step == "login_pass":
             username = logged_users[user_id]["username"]
 
@@ -159,30 +160,58 @@ def handle(m):
                 logged_users.pop(user_id)
             return
 
+        # ===== KABINET =====
         if step == "done":
             username = logged_users[user_id]["username"]
-            now = datetime.now().strftime("%d-%m %H:%M")
+
+            # 🇺🇿 O‘zbekiston vaqti
+            now = (datetime.utcnow() + timedelta(hours=5)).strftime("%d-%m %H:%M")
 
             if text == "✅ Keldim":
-                attendance.append(f"{username} | Keldi | {now}")
+                attendance.append({"user": username, "status": "Keldi", "time": now})
                 bot.send_message(user_id, "🟢 Belgilandi")
                 return
 
             if text == "❌ Ketdim":
-                attendance.append(f"{username} | Ketdi | {now}")
+                attendance.append({"user": username, "status": "Ketdi", "time": now})
                 bot.send_message(user_id, "🔴 Belgilandi")
                 return
 
             if text == "⚠️ Uzrli":
-                attendance.append(f"{username} | Uzrli | {now}")
+                attendance.append({"user": username, "status": "Uzrli", "time": now})
                 bot.send_message(user_id, "🟡 Belgilandi")
                 return
 
             if text == "📊 Statistika":
                 if attendance:
-                    bot.send_message(user_id, "📊 Davomat:\n\n" + "\n".join(attendance))
+
+                    keldi = []
+                    ketdi = []
+                    uzrli = []
+
+                    for a in attendance:
+                        line = f"{a['user']} | {a['time']}"
+                        if a["status"] == "Keldi":
+                            keldi.append(line)
+                        elif a["status"] == "Ketdi":
+                            ketdi.append(line)
+                        elif a["status"] == "Uzrli":
+                            uzrli.append(line)
+
+                    msg = "📊 *BUGUNGI DAVOMAT*\n\n"
+
+                    if keldi:
+                        msg += "🟢 *Keldi:*\n" + "\n".join(keldi) + "\n\n"
+                    if ketdi:
+                        msg += "🔴 *Ketdi:*\n" + "\n".join(ketdi) + "\n\n"
+                    if uzrli:
+                        msg += "🟡 *Uzrli:*\n" + "\n".join(uzrli)
+
+                    bot.send_message(user_id, msg, parse_mode="Markdown")
+
                 else:
-                    bot.send_message(user_id, "📭 Hali yo‘q")
+                    bot.send_message(user_id, "📭 Hali ma’lumot yo‘q")
+
                 return
 
     # DEFAULT
