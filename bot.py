@@ -7,7 +7,7 @@ TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 bot = telebot.TeleBot(TOKEN)
 
 # ===== WEB =====
-app = Flask(name)
+app = Flask(__name__)
 
 @app.route('/')
 def home():
