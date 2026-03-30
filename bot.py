@@ -7,7 +7,7 @@ from datetime import datetime
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 bot = telebot.TeleBot(TOKEN)
 
-# ===== WEB (Render uchun) =====
+# ===== WEB =====
 app = Flask(__name__)
 
 @app.route('/')
@@ -67,7 +67,6 @@ def start(m):
         m.chat.id,
         "👋 Assalomu alaykum!\n\n"
         "🏫 *10-maktab online tizimiga xush kelibsiz!*\n\n"
-        "📌 Bu bot orqali siz maktab tizimidan foydalanishingiz mumkin.\n\n"
         "👇 Kerakli bo‘limni tanlang:",
         parse_mode="Markdown",
         reply_markup=main_menu()
@@ -79,12 +78,12 @@ def handle(m):
     text = m.text
     user_id = m.chat.id
 
-    # 🔙 Orqaga
+    # 🔙 ORQAGA
     if text == "🔙 Orqaga":
         bot.send_message(user_id, "🔙 Asosiy menyu", reply_markup=main_menu())
         return
 
-    # 🔙 Kabinetdan chiqish
+    # 🔙 CHIQISH
     if text == "🔙 Chiqish":
         if user_id in logged_users:
             logged_users.pop(user_id)
@@ -101,7 +100,8 @@ def handle(m):
         bot.send_message(user_id, "👨‍🏫 O‘qituvchilar ro‘yxati", reply_markup=teachers_menu())
         return
 
-    if "O‘qituvchi" in text:
+    # ⚠️ MUHIM TUZATILDI
+    if text.startswith("👨‍🏫 O‘qituvchi"):
         bot.send_message(user_id,
         "👨‍🏫 O‘qituvchi haqida ma’lumot:\n\nIsm: ---\nFan: ---\nToifa: ---")
         return
@@ -122,8 +122,7 @@ def handle(m):
 
     # ===== MUROJAAT =====
     if text == "📩 Murojaat":
-        bot.send_message(user_id,
-        "📩 Fikr, savol yoki muammoingizni yozing.\n\n✍️ Yozing:")
+        bot.send_message(user_id, "📩 Yozing:")
         logged_users[user_id] = {"step": "feedback"}
         return
 
@@ -143,14 +142,12 @@ def handle(m):
 
         step = logged_users[user_id].get("step")
 
-        # USERNAME
         if step == "login_user":
             logged_users[user_id]["username"] = text
             logged_users[user_id]["step"] = "login_pass"
             bot.send_message(user_id, "🔒 Parol kiriting:")
             return
 
-        # PASSWORD
         if step == "login_pass":
             username = logged_users[user_id]["username"]
 
@@ -162,7 +159,6 @@ def handle(m):
                 logged_users.pop(user_id)
             return
 
-        # ===== KABINET =====
         if step == "done":
             username = logged_users[user_id]["username"]
             now = datetime.now().strftime("%d-%m %H:%M")
@@ -192,5 +188,5 @@ def handle(m):
     # DEFAULT
     bot.send_message(user_id, "🤖 Tugmalardan foydalaning!")
 
-print("🚀 SCHOOL SUPER BOT ISHLAYAPTI")
+print("🚀 SCHOOL BOT ISHLAYAPTI")
 bot.infinity_polling()
