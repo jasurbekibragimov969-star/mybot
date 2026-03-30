@@ -1,64 +1,42 @@
 import telebot
-import json
-import random
-import threading
 from telebot.types import ReplyKeyboardMarkup
+import threading
 from flask import Flask
 
-# ===== TOKEN =====
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 bot = telebot.TeleBot(TOKEN)
 
-# ===== WEB SERVER =====
-app = Flask(__name__)
+# ===== WEB =====
+app = Flask(name)
 
 @app.route('/')
 def home():
-    return "Bot ishlayapti!"
+    return "School Bot Running"
 
-def run_web():
+def run():
     app.run(host="0.0.0.0", port=10000)
 
-threading.Thread(target=run_web).start()
+threading.Thread(target=run).start()
 
-# ===== DATA =====
-DATA_FILE = "data.json"
-
-def load_data():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-# ===== MENUS =====
+# ===== MENU =====
 def main_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("📅 Vazifalar", "➕ Qo‘shish")
-    m.add("💰 Xarajat", "📊 Statistika")
-    m.add("💧 Sog‘liq", "🩺 Kasalliklar")
-    m.add("🔥 Motivatsiya")
+    m.add("🏫 Mening maktabim")
+    m.add("👨‍🏫 O‘qituvchilar", "📚 Sinflar")
+    m.add("📰 Yangiliklar", "📩 Murojaat")
     return m
 
-def health_menu():
+def teachers_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("💧 Suv ichish", "🏃 Yugurish")
-    m.add("🍎 Ovqatlanish", "😴 Uyqu")
+    for i in range(1, 28):
+        m.add(f"👨‍🏫 O‘qituvchi {i}")
     m.add("🔙 Orqaga")
     return m
 
-def illness_menu():
+def class_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("🤕 Bosh og‘riq", "🦷 Tish og‘riq")
-    m.add("🤧 Shamollash", "🤒 Isitma")
-    m.add("😖 Oshqozon og‘riq", "🦵 Oyoq og‘riq")
-    m.add("🧍 Bel og‘riq", "🙆‍♂️ Bo‘yin og‘riq")
-    m.add("😵 Bosh aylanish", "😫 Stress")
-    m.add("😴 Uyqusizlik", "🤢 Ko‘ngil aynish")
+    for i in range(1, 12):
+        m.add(f"📚 {i}-sinf")
     m.add("🔙 Orqaga")
     return m
 
@@ -67,142 +45,84 @@ def illness_menu():
 def start(m):
     bot.send_message(
         m.chat.id,
-        "👋 Assalomu alaykum!\n\n🤖 Aqlli yordamchi botga xush kelibsiz!",
+        "👋 Assalomu alaykum!\n\n"
+        "🏫 *10-maktab rasmiy online tizimiga xush kelibsiz!*\n\n"
+        "📌 Bu bot orqali siz:\n"
+        "• Maktab haqida ma’lumot olishingiz\n"
+        "• O‘qituvchilar bilan tanishishingiz\n"
+        "• Sinflar haqida bilishingiz\n"
+        "• Yangiliklarni kuzatishingiz\n"
+        "• Murojaat yuborishingiz mumkin\n\n"
+        "👇 Kerakli bo‘limni tanlang:",
+        parse_mode="Markdown",
         reply_markup=main_menu()
     )
 
-# ===== MAIN HANDLER =====
+# ===== MAIN =====
 @bot.message_handler(func=lambda m: True)
 def handle(m):
     text = m.text
-    user_id = str(m.chat.id)
 
-    data = load_data()
-    if user_id not in data:
-        data[user_id] = {"tasks": [], "money": []}
-
-    # ===== MENU =====
-    if text == "💧 Sog‘liq":
-        bot.send_message(m.chat.id, "💧 Sog‘liq", reply_markup=health_menu())
-        return
-
-    if text == "🩺 Kasalliklar":
-        bot.send_message(m.chat.id, "🩺 Kasalliklar", reply_markup=illness_menu())
-        return
-
+    # BACK
     if text == "🔙 Orqaga":
-        bot.send_message(m.chat.id, "🔙 Menu", reply_markup=main_menu())
+        bot.send_message(m.chat.id, "🔙 Asosiy menyu", reply_markup=main_menu())
         return
 
-    # ===== SOG‘LIQ =====
-    if text == "💧 Suv ichish":
-        bot.send_message(m.chat.id, "Kuniga 2-3 litr suv iching. Ertalab suv ichish foydali.")
+    # MAKTAB
+    if text == "🏫 Mening maktabim":
+        bot.send_message(m.chat.id,
+        "🏫 Maktab haqida ma’lumot (keyin to‘ldiriladi)")
         return
 
-    if text == "🏃 Yugurish":
-        bot.send_message(m.chat.id, "Haftasiga 3-4 marta yugurish sog‘liq uchun foydali.")
+    # TEACHERS
+    if text == "👨‍🏫 O‘qituvchilar":
+        bot.send_message(m.chat.id,
+        "👨‍🏫 O‘qituvchilar ro‘yxati",
+        reply_markup=teachers_menu())
         return
 
-    if text == "🍎 Ovqatlanish":
-        bot.send_message(m.chat.id, "Ko‘proq sabzavot va foydali ovqat iste’mol qiling.")
+    if "O‘qituvchi" in text:
+        bot.send_message(m.chat.id,
+        "👨‍🏫 O‘qituvchi haqida ma’lumot:\n\n"
+        "Ism: ---\n"
+        "Fan: ---\n"
+        "Toifa: ---\n"
+        "Qisqacha: ---")
         return
 
-    if text == "😴 Uyqu":
-        bot.send_message(m.chat.id, "Kuniga 7-8 soat uxlash sog‘liq uchun muhim.")
+    # CLASSES
+    if text == "📚 Sinflar":
+        bot.send_message(m.chat.id,
+        "📚 Sinflar ro‘yxati",
+        reply_markup=class_menu())
         return
 
-    # ===== KASALLIKLAR =====
-    if text == "🤕 Bosh og‘riq":
-        bot.send_message(m.chat.id, "Dam oling, suv iching, massaj qiling va kerak bo‘lsa paracetamol iching.")
+    if "sinf" in text:
+        bot.send_message(m.chat.id,
+        "📚 Sinf haqida ma’lumot (keyin to‘ldiriladi)")
         return
 
-    if text == "🦷 Tish og‘riq":
-        bot.send_message(m.chat.id, "Tuzli suv bilan og‘izni chaying, issiq-sovuqdan saqlaning va dori iching.")
+    # NEWS
+    if text == "📰 Yangiliklar":
+        bot.send_message(m.chat.id,
+        "📰 Tadbirlar va yangiliklar (keyin qo‘shiladi)")
         return
 
-    if text == "🤧 Shamollash":
-        bot.send_message(m.chat.id, "Issiq choy iching, dam oling va issiq kiying.")
+    # MUROJAAT
+    if text == "📩 Murojaat":
+        bot.send_message(m.chat.id,
+        "📩 Hurmatli foydalanuvchi!\n\n"
+        "Siz bu yer orqali maktabga taklif, savol yoki muammo yuborishingiz mumkin.\n"
+        "Agar muammo yoki noqulay holat bo‘lsa ham yozishingiz mumkin.\n\n"
+        "✍️ Marhamat, murojaatingizni yozing:")
         return
 
-    if text == "🤒 Isitma":
-        bot.send_message(m.chat.id, "Ko‘p suv iching, dam oling va paracetamol ichish mumkin.")
-        return
+    # SEND TO ADMIN
+    bot.send_message(6344661867,
+    f"📩 Yangi murojaat:\n\n{text}")
 
-    if text == "😖 Oshqozon og‘riq":
-        bot.send_message(m.chat.id, "Yengil ovqat yeying va gazli ichimliklardan saqlaning.")
-        return
-
-    if text == "🦵 Oyoq og‘riq":
-        bot.send_message(m.chat.id, "Dam oling, massaj qiling va iliq suv yordam beradi.")
-        return
-
-    if text == "🧍 Bel og‘riq":
-        bot.send_message(m.chat.id, "Dam oling va to‘g‘ri o‘tirishga e’tibor bering.")
-        return
-
-    if text == "🙆‍♂️ Bo‘yin og‘riq":
-        bot.send_message(m.chat.id, "Telefonni kam ishlating va massaj qiling.")
-        return
-
-    if text == "😵 Bosh aylanish":
-        bot.send_message(m.chat.id, "Dam oling va suv iching.")
-        return
-
-    if text == "😫 Stress":
-        bot.send_message(m.chat.id, "Dam oling, sayr qiling va sport bilan shug‘ullaning.")
-        return
-
-    if text == "😴 Uyqusizlik":
-        bot.send_message(m.chat.id, "Telefonni kamaytiring va bir vaqtda uxlashga odatlaning.")
-        return
-
-    if text == "🤢 Ko‘ngil aynish":
-        bot.send_message(m.chat.id, "Yengil ovqat yeying va dam oling.")
-        return
-
-    # ===== XARAJAT =====
-    if text == "💰 Xarajat":
-        bot.send_message(m.chat.id, "Summani yozing:")
-        return
-
-    if text.isdigit():
-        data[user_id]["money"].append(int(text))
-        save_data(data)
-        bot.send_message(m.chat.id, "Qo‘shildi")
-        return
-
-    # ===== STAT =====
-    if text == "📊 Statistika":
-        total = sum(data[user_id]["money"])
-        bot.send_message(m.chat.id, f"Jami: {total}")
-        return
-
-    # ===== VAZIFA =====
-    if text == "📅 Vazifalar":
-        tasks = data[user_id]["tasks"]
-        bot.send_message(m.chat.id, "\n".join(tasks) if tasks else "Yo‘q")
-        return
-
-    if text == "➕ Qo‘shish":
-        bot.send_message(m.chat.id, "Vazifa yozing (masalan: yugurish 18:00)")
-        return
-
-    if ":" in text:
-        data[user_id]["tasks"].append(text)
-        save_data(data)
-        bot.send_message(m.chat.id, "Saqlandi")
-        return
-
-    # ===== MOTIVATSIYA =====
-    if text == "🔥 Motivatsiya":
-        bot.send_message(m.chat.id, random.choice([
-            "🔥 Harakat qil!",
-            "💪 Taslim bo‘lma!",
-            "🚀 Oldinga yur!"
-        ]))
-        return
-
-    bot.send_message(m.chat.id, "🤖 Tugmalardan foydalaning!")
-
-print("🚀 BOT ISHLAYAPTI")
+    bot.send_message(m.chat.id,
+    "✅ Murojaatingiz yuborildi!")
+    
+print("🚀 SCHOOL BOT ISHLAYAPTI")
 bot.infinity_polling()
