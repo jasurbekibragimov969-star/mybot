@@ -3,192 +3,215 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 from flask import Flask
 from datetime import datetime, timedelta
-import json, os, hashlib
+import json
+import os
+import hashlib
+import time
 
-TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
+# CONFIG
+TOKEN = "TOKENINGNI_BU_YERGA_QO'Y"
 ADMIN_ID = 6344661867
-DATA_FILE = "attendance.json"
 TZ_OFFSET = 5
+PAGE_SIZE = 8
 
-def h(p): return hashlib.sha256(p.encode()).hexdigest()
+TEACHERS_FILE = "teachers.json"
+ATTENDANCE_FILE = "attendance.json"
+SCHOOL_FILE = "school.json"
+CLASSES_FILE = "classes.json"
+NEWS_FILE = "news.json"
+MESSAGES_FILE = "messages.json"
 
-TEACHERS = {
-"dilara_abdullayeva": h("dilara452"),
-"nigora_abdurahmonova": h("nigora879"),
-"gulxon_abduraxmonova": h("gulxon098"),
-"sharofiddin_ahmedov": h("sharofiddin321"),
-"nafisa_akkulova": h("nafisa654"),
-"rano_aliyeva": h("rano111"),
-"feruza_alloberdiyeva": h("feruza222"),
-"gulpari_asrayeva": h("gulpari333"),
-"orzugul_bekmuradova": h("orzugul444"),
-"maftuna_egamberdiyeva": h("maftuna555"),
-"nargiz_hakimova": h("nargiz666"),
-"mavluda_ibragimjonova": h("mavluda777"),
-"olmasoy_karimova": h("olmasoy888"),
-"dilshoda_mamatqulova": h("dilshoda999"),
-"zulfiya_mamedova": h("zulfiya147"),
-"muhayyo_maxsudova": h("muhayyo258"),
-"izatulla_mirzakulov": h("izatulla369"),
-"dilbarbibi_nishonova": h("dilbarbibi159"),
-"gulandom_qurolova": h("gulandom753"),
-"robiya_rayimova": h("robiya852"),
-"nadira_rustamova": h("nadira951"),
-"shoxsanam_subanova": h("shoxsanam357"),
-"lobar_sulaymanova": h("lobar258"),
-"muslim_turgunbayev": h("muslim654"),
-"gulnoza_xalmanova": h("gulnoza741"),
-"olmasoy_shabazova": h("olmasoy852"),
-"jaxongir_isroilov": h("jaxongir963")
-}
-
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot ishlayapti"
+    return "✅ Bot is running"
 
 threading.Thread(target=lambda: app.run(host="0.0.0.0", port=10000), daemon=True).start()
 
 sessions = {}
-user_states = {}
+admin_states = {}
 
-# ===== DATA =====
-def load_data():
-    if not os.path.exists(DATA_FILE): return {}
-    return json.load(open(DATA_FILE, encoding="utf-8"))
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-def save_data(d):
-    json.dump(d, open(DATA_FILE,"w",encoding="utf-8"), indent=2, ensure_ascii=False)
+def load_json(filepath, default):
+    if not os.path.exists(filepath):
+        return default
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return default
 
-def now(): return datetime.utcnow()+timedelta(hours=TZ_OFFSET)
-def today(): return now().strftime("%Y-%m-%d")
-def time_now(): return now().strftime("%H:%M")
+def save_json(filepath, data):
+    tmp = filepath + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, filepath)
 
-def record(user,status):
-    db=load_data()
-    db.setdefault(today(),[]).append({"user":user,"status":status,"time":time_now()})
-    save_data(db)
+DEFAULT_TEACHERS = {
+    "dilara_abdullayeva": hash_password("dilara452"),
+    "nigora_abdurahmonova": hash_password("nigora879"),
+    "gulxon_abduraxmonova": hash_password("gulxon098"),
+    "sharofiddin_ahmedov": hash_password("sharofiddin321"),
+    "nafisa_akkulova": hash_password("nafisa654"),
+    "rano_aliyeva": hash_password("rano111"),
+    "feruza_alloberdiyeva": hash_password("feruza222"),
+    "gulpari_asrayeva": hash_password("gulpari333"),
+    "orzugul_bekmuradova": hash_password("orzugul444"),
+    "maftuna_egamberdiyeva": hash_password("maftuna555"),
+    "nargiz_hakimova": hash_password("nargiz666"),
+    "mavluda_ibragimjonova": hash_password("mavluda777"),
+    "olmasoy_karimova": hash_password("olmasoy888"),
+    "dilshoda_mamatqulova": hash_password("dilshoda999"),
+    "zulfiya_mamedova": hash_password("zulfiya147"),
+    "muhayyo_maxsudova": hash_password("muhayyo258"),
+    "izatulla_mirzakulov": hash_password("izatulla369"),
+    "dilbarbibi_nishonova": hash_password("dilbarbibi159"),
+    "gulandom_qurolova": hash_password("gulandom753"),
+    "robiya_rayimova": hash_password("robiya852"),
+    "nadira_rustamova": hash_password("nadira951"),
+    "shoxsanam_subanova": hash_password("shoxsanam357"),
+    "lobar_sulaymanova": hash_password("lobar258"),
+    "muslim_turgunbayev": hash_password("muslim654"),
+    "gulnoza_xalmanova": hash_password("gulnoza741"),
+    "olmasoy_shabazova": hash_password("olmasoy852"),
+    "jaxongir_isroilov": hash_password("jaxongir963"),
+}
 
-# ===== MENYU =====
-def main_kb():
-    kb=InlineKeyboardMarkup(row_width=2)
+def load_teachers():
+    data = load_json(TEACHERS_FILE, None)
+    if data is None:
+        save_json(TEACHERS_FILE, DEFAULT_TEACHERS)
+        return DEFAULT_TEACHERS
+    return data
+
+def load_attendance():
+    return load_json(ATTENDANCE_FILE, {})
+
+def save_attendance(data):
+    save_json(ATTENDANCE_FILE, data)
+
+def get_now():
+    return datetime.utcnow() + timedelta(hours=TZ_OFFSET)
+
+def get_today():
+    return get_now().strftime("%Y-%m-%d")
+
+def get_time_now():
+    return get_now().strftime("%H:%M")
+
+def record_attendance(username, status):
+    db = load_attendance()
+    today = get_today()
+    db.setdefault(today, [])
+    for r in db[today]:
+        if r["user"] == username and r["status"] == status:
+            return False
+    db[today].append({
+        "user": username,
+        "status": status,
+        "time": get_time_now()
+    })
+    save_attendance(db)
+    return True
+
+def kb_main(uid):
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("🏫 Maktab",callback_data="school"),
-        InlineKeyboardButton("👨‍🏫 O‘qituvchilar",callback_data="teachers"),
+        InlineKeyboardButton("🏫 Maktab haqida", callback_data="school"),
+        InlineKeyboardButton("👨‍🏫 O'qituvchilar", callback_data="teachers"),
     )
     kb.add(
-        InlineKeyboardButton("📚 Sinflar",callback_data="classes"),
-        InlineKeyboardButton("📰 Yangiliklar",callback_data="news"),
+        InlineKeyboardButton("📚 Sinflar", callback_data="classes"),
+        InlineKeyboardButton("📰 Yangiliklar", callback_data="news"),
     )
-    kb.add(
-        InlineKeyboardButton("📩 Murojaat",callback_data="contact"),
-        InlineKeyboardButton("🔐 Kabinet",callback_data="login"),
-    )
+    kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
+    kb.add(InlineKeyboardButton("🔐 O'qituvchi kabineti", callback_data="login"))
+    if uid == ADMIN_ID:
+        kb.add(InlineKeyboardButton("⚙️ Admin Panel", callback_data="admin_panel"))
     return kb
 
-def panel_kb():
-    kb=InlineKeyboardMarkup(row_width=2)
+def kb_teacher_panel():
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("✅ Keldim",callback_data="keldi"),
-        InlineKeyboardButton("🚪 Ketdim",callback_data="ketdi"),
+        InlineKeyboardButton("✅ Keldim", callback_data="att_keldi"),
+        InlineKeyboardButton("🚪 Ketdim", callback_data="att_ketdi"),
     )
     kb.add(
-        InlineKeyboardButton("📋 Uzrli",callback_data="uzrli"),
-        InlineKeyboardButton("📊 Statistika",callback_data="stat"),
+        InlineKeyboardButton("📋 Uzrli sabab", callback_data="att_uzrli"),
+        InlineKeyboardButton("📊 Bugungi holat", callback_data="att_stat"),
     )
-    kb.add(InlineKeyboardButton("🔙 Chiqish",callback_data="logout"))
+    kb.add(InlineKeyboardButton("🗓 Sanalar", callback_data="att_dates"))
+    kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
 
-# ===== START =====
+def send_main(uid):
+    bot.send_message(uid, "🏫 10-MAKTAB BOSHQARUV TIZIMI", reply_markup=kb_main(uid))
+
 @bot.message_handler(commands=["start"])
 def start(m):
     sessions.pop(m.chat.id, None)
-    user_states.pop(m.chat.id, None)
-    bot.send_message(m.chat.id,"🏫 10-maktab tizimi",reply_markup=main_kb())
+    send_main(m.chat.id)
 
-# ===== TEXT HANDLER =====
-@bot.message_handler(func=lambda m: True)
-def handler(m):
-    uid=m.chat.id
+@bot.callback_query_handler(func=lambda call: True)
+def call_handler(call):
+    uid = call.message.chat.id
+    data = call.data
 
-    # Murojaat
-    if user_states.get(uid)=="contact":
-        bot.send_message(ADMIN_ID,f"📩 Yangi murojaat:\n\n{m.text}")
-        bot.send_message(uid,"✅ Yuborildi")
-        user_states.pop(uid)
+    bot.answer_callback_query(call.id)
+
+    if data == "login":
+        sessions[uid] = {"step": "user"}
+        bot.send_message(uid, "Username kiriting")
         return
 
-    s=sessions.get(uid)
+    if data == "logout":
+        sessions.pop(uid, None)
+        send_main(uid)
+        return
 
-    if not s: return
-    if s.get("step")=="done": return
+    if data == "att_keldi":
+        record_attendance(sessions[uid]["username"], "Keldi")
+        bot.send_message(uid, "✅ Keldi belgilandi")
 
-    if s["step"]=="user":
-        if m.text not in TEACHERS:
-            bot.send_message(uid,"❌ User topilmadi"); return
-        sessions[uid]["u"]=m.text
-        sessions[uid]["step"]="pass"
-        bot.send_message(uid,"🔒 Parol")
+    if data == "att_stat":
+        db = load_attendance()
+        today = get_today()
+        teachers = load_teachers()
 
-    elif s["step"]=="pass":
-        u=s["u"]
-        if TEACHERS[u]==h(m.text):
-            sessions[uid]={"step":"done","u":u}
-            bot.send_message(uid,f"✅ {u}",reply_markup=panel_kb())
+        msg = f"📊 {today}\n\n"
+        marked = {r["user"]: r for r in db.get(today, [])}
+
+        for t in teachers:
+            if t in marked:
+                msg += f"🟢 {t} — {marked[t]['status']}\n"
+            else:
+                msg += f"🔴 {t} — belgilanmadi\n"
+
+        bot.send_message(uid, msg)
+
+@bot.message_handler(func=lambda m: True)
+def login(m):
+    uid = m.chat.id
+    if uid not in sessions:
+        return
+
+    if sessions[uid]["step"] == "user":
+        sessions[uid]["username"] = m.text
+        sessions[uid]["step"] = "pass"
+        bot.send_message(uid, "Parol kiriting")
+
+    elif sessions[uid]["step"] == "pass":
+        teachers = load_teachers()
+        user = sessions[uid]["username"]
+        if teachers.get(user) == hash_password(m.text):
+            sessions[uid]["step"] = "done"
+            bot.send_message(uid, "Kabinetga xush kelibsiz", reply_markup=kb_teacher_panel())
         else:
-            sessions.pop(uid)
-            bot.send_message(uid,"❌ Xato")
+            bot.send_message(uid, "Xato parol")
 
-# ===== CALLBACK =====
-@bot.callback_query_handler(func=lambda c: True)
-def call(c):
-    uid=c.message.chat.id
-    d=c.data
-    bot.answer_callback_query(c.id)
-
-    if d=="school":
-        bot.send_message(uid,"🏫 Maktab haqida ma'lumot")
-    elif d=="teachers":
-        bot.send_message(uid,"👨‍🏫 O‘qituvchilar ro‘yxati")
-    elif d=="classes":
-        bot.send_message(uid,"📚 Sinflar haqida ma'lumot")
-    elif d=="news":
-        bot.send_message(uid,"📰 Yangiliklar")
-    elif d=="contact":
-        user_states[uid]="contact"
-        bot.send_message(uid,"✍️ Murojaatingizni yozing")
-
-    elif d=="login":
-        sessions[uid]={"step":"user"}
-        bot.send_message(uid,"👤 Username")
-
-    elif d=="logout":
-        sessions.pop(uid,None)
-        bot.send_message(uid,"Chiqdingiz",reply_markup=main_kb())
-
-    elif sessions.get(uid,{}).get("step")!="done":
-        bot.send_message(uid,"Avval login qiling")
-
-    else:
-        u=sessions[uid]["u"]
-
-        if d=="keldi": record(u,"Keldi")
-        elif d=="ketdi": record(u,"Ketdi")
-        elif d=="uzrli": record(u,"Uzrli")
-
-        elif d=="stat":
-            db=load_data()
-            t=today()
-            msg=f"📊 {t}\n\n"
-            done={i["user"]:i["status"] for i in db.get(t,[])}
-            for teacher in TEACHERS:
-                if teacher in done:
-                    msg+=f"🟢 {teacher} — {done[teacher]}\n"
-                else:
-                    msg+=f"🔴 {teacher} — Belgilanmadi\n"
-            bot.send_message(uid,msg)
-
-print("🚀 ISHLAYAPTI")
+print("BOT ISHLADI")
 bot.infinity_polling()
