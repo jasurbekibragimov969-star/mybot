@@ -8,202 +8,187 @@ import json
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 bot = telebot.TeleBot(TOKEN)
 
-ADMIN_ID = 6344661867
-
 # ===== WEB =====
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Running"
+    return "School Bot Running"
 
 def run():
     app.run(host="0.0.0.0", port=10000)
 
 threading.Thread(target=run).start()
 
-# ===== DATA =====
-DATA_FILE = "data.json"
+# ===== DATA FILE =====
+DATA_FILE = "attendance.json"
 
 def load_data():
     try:
         with open(DATA_FILE, "r") as f:
             return json.load(f)
     except:
-        return {
-            "teachers": {},
-            "school": "Maktab haqida ma’lumot yo‘q",
-            "classes": {},
-            "attendance": {}
-        }
+        return {}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# ===== LOGIN =====
+teachers_login = {
+    "feruza_01": "feruza1234",
+    "feruza_02": "feruza1234"
+}
+
 logged_users = {}
+
+ADMIN_ID = 6344661867
 
 # ===== MENU =====
 def main_menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("🏫 Maktab", "👨‍🏫 O‘qituvchilar")
-    m.add("📚 Sinflar", "📩 Murojaat")
-    m.add("👨‍💼 Kabinet")
-    return m
-
-def admin_menu():
-    m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add("➕ O‘qituvchi qo‘shish")
-    m.add("🏫 Maktab ma’lumot")
-    m.add("📚 Sinf qo‘shish")
-    m.add("📊 Ko‘rish")
-    m.add("🔙 Chiqish")
+    m.add("🏫 Mening maktabim")
+    m.add("👨‍🏫 O‘qituvchilar", "📚 Sinflar")
+    m.add("📰 Yangiliklar", "📩 Murojaat")
+    m.add("👨‍💼 O‘qituvchi kabineti")
     return m
 
 def teacher_panel():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
     m.add("✅ Keldim", "❌ Ketdim")
     m.add("⚠️ Uzrli", "📊 Statistika")
+    m.add("📅 Sana bo‘yicha")
     m.add("🔙 Chiqish")
     return m
 
 # ===== START =====
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id, "👋 Xush kelibsiz", reply_markup=main_menu())
-
-# ===== ADMIN =====
-@bot.message_handler(commands=['admin'])
-def admin(m):
-    if m.chat.id == ADMIN_ID:
-        bot.send_message(m.chat.id, "🔐 Admin panel", reply_markup=admin_menu())
-    else:
-        bot.send_message(m.chat.id, "❌ Ruxsat yo‘q")
+    bot.send_message(
+        m.chat.id,
+        "👋 Assalomu alaykum!\n\n🏫 *10-maktab tizimi*\n\n👇 Tanlang:",
+        parse_mode="Markdown",
+        reply_markup=main_menu()
+    )
 
 # ===== MAIN =====
 @bot.message_handler(func=lambda m: True)
 def handle(m):
     text = m.text
     user_id = m.chat.id
-    data = load_data()
 
-    # ADMIN PANEL
-    if user_id == ADMIN_ID:
+    # ORQAGA
+    if text == "🔙 Chiqish":
+        logged_users.pop(user_id, None)
+        bot.send_message(user_id, "🔙 Asosiy menyu", reply_markup=main_menu())
+        return
 
-        if text == "➕ O‘qituvchi qo‘shish":
-            bot.send_message(user_id, "username va parol yoz:\nmisol: ali_01 1234")
-            logged_users[user_id] = {"step": "add_teacher"}
-            return
+    # LOGIN START
+    if text == "👨‍💼 O‘qituvchi kabineti":
+        bot.send_message(user_id, "👤 Username kiriting:")
+        logged_users[user_id] = {"step": "user"}
+        return
 
-        if text == "🏫 Maktab ma’lumot":
-            bot.send_message(user_id, "Maktab haqida yoz:")
-            logged_users[user_id] = {"step": "school"}
-            return
-
-        if text == "📚 Sinf qo‘shish":
-            bot.send_message(user_id, "misol: 5A sinf haqida matn")
-            logged_users[user_id] = {"step": "class"}
-            return
-
-        if text == "📊 Ko‘rish":
-            bot.send_message(user_id, str(data))
-            return
-
-    # ADMIN INPUT
     if user_id in logged_users:
 
         step = logged_users[user_id]["step"]
 
-        if step == "add_teacher":
-            u, p = text.split()
-            data["teachers"][u] = p
-            save_data(data)
-            bot.send_message(user_id, "✅ Qo‘shildi")
-            logged_users.pop(user_id)
-            return
-
-        if step == "school":
-            data["school"] = text
-            save_data(data)
-            bot.send_message(user_id, "✅ Saqlandi")
-            logged_users.pop(user_id)
-            return
-
-        if step == "class":
-            parts = text.split(" ", 1)
-            data["classes"][parts[0]] = parts[1]
-            save_data(data)
-            bot.send_message(user_id, "✅ Saqlandi")
-            logged_users.pop(user_id)
-            return
-
-    # USER
-    if text == "🏫 Maktab":
-        bot.send_message(user_id, data["school"])
-        return
-
-    if text == "👨‍🏫 O‘qituvchilar":
-        if data["teachers"]:
-            bot.send_message(user_id, "\n".join(data["teachers"].keys()))
-        else:
-            bot.send_message(user_id, "Yo‘q")
-        return
-
-    if text == "📚 Sinflar":
-        if data["classes"]:
-            bot.send_message(user_id, "\n".join(data["classes"].keys()))
-        else:
-            bot.send_message(user_id, "Yo‘q")
-        return
-
-    if text == "👨‍💼 Kabinet":
-        bot.send_message(user_id, "Username:")
-        logged_users[user_id] = {"step": "login_user"}
-        return
-
-    # LOGIN
-    if user_id in logged_users:
-
-        step = logged_users[user_id]["step"]
-
-        if step == "login_user":
+        if step == "user":
             logged_users[user_id]["username"] = text
-            logged_users[user_id]["step"] = "login_pass"
-            bot.send_message(user_id, "Parol:")
+            logged_users[user_id]["step"] = "pass"
+            bot.send_message(user_id, "🔒 Parol kiriting:")
             return
 
-        if step == "login_pass":
+        if step == "pass":
             username = logged_users[user_id]["username"]
-
-            if username in data["teachers"] and data["teachers"][username] == text:
+            if username in teachers_login and teachers_login[username] == text:
                 logged_users[user_id] = {"step": "done", "username": username}
-                bot.send_message(user_id, "Kirdingiz", reply_markup=teacher_panel())
+                bot.send_message(user_id, "✅ Xush kelibsiz", reply_markup=teacher_panel())
             else:
-                bot.send_message(user_id, "Xato")
+                bot.send_message(user_id, "❌ Login xato")
                 logged_users.pop(user_id)
             return
 
+        # ===== KABINET =====
         if step == "done":
+
             username = logged_users[user_id]["username"]
 
             now = datetime.utcnow() + timedelta(hours=5)
             date = now.strftime("%Y-%m-%d")
             time = now.strftime("%H:%M")
 
-            if date not in data["attendance"]:
-                data["attendance"][date] = []
+            data = load_data()
+
+            if date not in data:
+                data[date] = []
 
             if text == "✅ Keldim":
-                data["attendance"][date].append({"user": username, "status": "Keldi", "time": time})
+                data[date].append({"user": username, "status": "Keldi", "time": time})
                 save_data(data)
-                bot.send_message(user_id, "OK")
+                bot.send_message(user_id, "🟢 Keldi belgilandi")
                 return
 
+            if text == "❌ Ketdim":
+                data[date].append({"user": username, "status": "Ketdi", "time": time})
+                save_data(data)
+                bot.send_message(user_id, "🔴 Ketdi belgilandi")
+                return
+
+            if text == "⚠️ Uzrli":
+                data[date].append({"user": username, "status": "Uzrli", "time": time})
+                save_data(data)
+                bot.send_message(user_id, "🟡 Uzrli belgilandi")
+                return
+
+            # ===== BUGUNGI STAT =====
             if text == "📊 Statistika":
-                bot.send_message(user_id, str(data["attendance"]))
+                show_stat(user_id, date)
                 return
 
-    bot.send_message(user_id, "🤖 Tugmalarni ishlating")
+            # ===== SANALAR =====
+            if text == "📅 Sana bo‘yicha":
+                dates = list(data.keys())
+                if dates:
+                    msg = "📅 Mavjud sanalar:\n\n" + "\n".join(dates)
+                else:
+                    msg = "📭 Ma’lumot yo‘q"
+                bot.send_message(user_id, msg)
+                return
 
-print("RUNNING")
+            # AGAR USER SANA YOZSA
+            if text in data:
+                show_stat(user_id, text)
+                return
+
+def show_stat(user_id, date):
+    data = load_data()
+
+    if date not in data:
+        bot.send_message(user_id, "📭 Ma’lumot yo‘q")
+        return
+
+    keldi, ketdi, uzrli = [], [], []
+
+    for a in data[date]:
+        line = f"{a['user']} | {a['time']}"
+        if a["status"] == "Keldi":
+            keldi.append(line)
+        elif a["status"] == "Ketdi":
+            ketdi.append(line)
+        else:
+            uzrli.append(line)
+
+    msg = f"📊 *{date} DAVOMAT*\n\n"
+
+    if keldi:
+        msg += "🟢 *Keldi:*\n" + "\n".join(keldi) + "\n\n"
+    if ketdi:
+        msg += "🔴 *Ketdi:*\n" + "\n".join(ketdi) + "\n\n"
+    if uzrli:
+        msg += "🟡 *Uzrli:*\n" + "\n".join(uzrli)
+
+    bot.send_message(user_id, msg, parse_mode="Markdown")
+
+print("🚀 SYSTEM READY")
 bot.infinity_polling()
