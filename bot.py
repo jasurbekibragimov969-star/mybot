@@ -12,16 +12,8 @@ import time
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 ADMIN_ID = 6344661867
 TZ_OFFSET = 5
-PAGE_SIZE = 8
 
-TEACHERS_FILE = "teachers.json"
-ATTENDANCE_FILE = "attendance.json"
-SCHOOL_FILE = "school.json"
-CLASSES_FILE = "classes.json"
-NEWS_FILE = "news.json"
-MESSAGES_FILE = "messages.json"
-
-bot = telebot.TeleBot(TOKEN, parse_mode=None)
+bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 @app.route("/")
@@ -31,92 +23,39 @@ def home():
 threading.Thread(target=lambda: app.run(host="0.0.0.0", port=10000), daemon=True).start()
 
 sessions = {}
-admin_states = {}
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
-
-def load_json(filepath, default):
-    if not os.path.exists(filepath):
-        return default
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return default
-
-def save_json(filepath, data):
-    tmp = filepath + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, filepath)
 
 DEFAULT_TEACHERS = {
     "dilara_abdullayeva": hash_password("dilara452"),
     "nigora_abdurahmonova": hash_password("nigora879"),
     "gulxon_abduraxmonova": hash_password("gulxon098"),
-    "sharofiddin_ahmedov": hash_password("sharofiddin321"),
-    "nafisa_akkulova": hash_password("nafisa654"),
-    "rano_aliyeva": hash_password("rano111"),
-    "feruza_alloberdiyeva": hash_password("feruza222"),
-    "gulpari_asrayeva": hash_password("gulpari333"),
-    "orzugul_bekmuradova": hash_password("orzugul444"),
-    "maftuna_egamberdiyeva": hash_password("maftuna555"),
-    "nargiz_hakimova": hash_password("nargiz666"),
-    "mavluda_ibragimjonova": hash_password("mavluda777"),
-    "olmasoy_karimova": hash_password("olmasoy888"),
-    "dilshoda_mamatqulova": hash_password("dilshoda999"),
-    "zulfiya_mamedova": hash_password("zulfiya147"),
-    "muhayyo_maxsudova": hash_password("muhayyo258"),
-    "izatulla_mirzakulov": hash_password("izatulla369"),
-    "dilbarbibi_nishonova": hash_password("dilbarbibi159"),
-    "gulandom_qurolova": hash_password("gulandom753"),
-    "robiya_rayimova": hash_password("robiya852"),
-    "nadira_rustamova": hash_password("nadira951"),
-    "shoxsanam_subanova": hash_password("shoxsanam357"),
-    "lobar_sulaymanova": hash_password("lobar258"),
-    "muslim_turgunbayev": hash_password("muslim654"),
-    "gulnoza_xalmanova": hash_password("gulnoza741"),
-    "olmasoy_shabazova": hash_password("olmasoy852"),
-    "jaxongir_isroilov": hash_password("jaxongir963"),
 }
 
 def load_teachers():
-    data = load_json(TEACHERS_FILE, None)
-    if data is None:
-        save_json(TEACHERS_FILE, DEFAULT_TEACHERS)
-        return DEFAULT_TEACHERS
-    return data
+    return DEFAULT_TEACHERS
 
 def load_attendance():
-    return load_json(ATTENDANCE_FILE, {})
+    if not os.path.exists("att.json"):
+        return {}
+    return json.load(open("att.json"))
 
 def save_attendance(data):
-    save_json(ATTENDANCE_FILE, data)
-
-def get_now():
-    return datetime.utcnow() + timedelta(hours=TZ_OFFSET)
+    json.dump(data, open("att.json", "w"))
 
 def get_today():
-    return get_now().strftime("%Y-%m-%d")
+    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d")
 
 def get_time_now():
-    return get_now().strftime("%H:%M")
+    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%H:%M")
 
 def record_attendance(username, status):
     db = load_attendance()
     today = get_today()
     db.setdefault(today, [])
-    for r in db[today]:
-        if r["user"] == username and r["status"] == status:
-            return False
-    db[today].append({
-        "user": username,
-        "status": status,
-        "time": get_time_now()
-    })
+    db[today].append({"user": username, "status": status, "time": get_time_now()})
     save_attendance(db)
-    return True
 
 def kb_main(uid):
     kb = InlineKeyboardMarkup(row_width=2)
@@ -130,21 +69,14 @@ def kb_main(uid):
     )
     kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
     kb.add(InlineKeyboardButton("🔐 O'qituvchi kabineti", callback_data="login"))
-    if uid == ADMIN_ID:
-        kb.add(InlineKeyboardButton("⚙️ Admin Panel", callback_data="admin_panel"))
     return kb
 
 def kb_teacher_panel():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("✅ Keldim", callback_data="att_keldi"),
-        InlineKeyboardButton("🚪 Ketdim", callback_data="att_ketdi"),
-    )
-    kb.add(
-        InlineKeyboardButton("📋 Uzrli sabab", callback_data="att_uzrli"),
         InlineKeyboardButton("📊 Bugungi holat", callback_data="att_stat"),
     )
-    kb.add(InlineKeyboardButton("🗓 Sanalar", callback_data="att_dates"))
     kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
 
@@ -163,6 +95,7 @@ def call_handler(call):
 
     bot.answer_callback_query(call.id)
 
+    # 🔐 LOGIN
     if data == "login":
         sessions[uid] = {"step": "user"}
         bot.send_message(uid, "Username kiriting")
@@ -173,10 +106,41 @@ def call_handler(call):
         send_main(uid)
         return
 
+    # 🏫 MAKTAB
+    if data == "school":
+        bot.send_message(uid, "🏫 10-maktab haqida ma'lumot...")
+        return
+
+    # 👨‍🏫 O‘QITUVCHILAR
+    if data == "teachers":
+        teachers = load_teachers()
+        text = "👨‍🏫 O'qituvchilar:\n\n"
+        for t in teachers:
+            text += f"• {t}\n"
+        bot.send_message(uid, text)
+        return
+
+    # 📚 SINFLAR
+    if data == "classes":
+        bot.send_message(uid, "📚 Sinflar: 1-A, 5-B, 11-A")
+        return
+
+    # 📰 YANGILIK
+    if data == "news":
+        bot.send_message(uid, "📰 Hozircha yangilik yo'q")
+        return
+
+    # 📩 MUROJAAT
+    if data == "contact":
+        bot.send_message(uid, "📩 Admin bilan bog‘lanish: @username")
+        return
+
+    # ✅ KELDI
     if data == "att_keldi":
         record_attendance(sessions[uid]["username"], "Keldi")
         bot.send_message(uid, "✅ Keldi belgilandi")
 
+    # 📊 STAT
     if data == "att_stat":
         db = load_attendance()
         today = get_today()
