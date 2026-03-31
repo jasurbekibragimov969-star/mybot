@@ -30,6 +30,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 sessions = {}
 
+# ===== DATA =====
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
@@ -40,10 +41,8 @@ def load_data():
         return {}
 
 def save_data(data):
-    tmp = DATA_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, DATA_FILE)
 
 def get_now():
     return datetime.utcnow() + timedelta(hours=TZ_OFFSET)
@@ -66,6 +65,7 @@ def record_attendance(username, status):
     })
     save_data(db)
 
+# ===== KEYBOARDS =====
 def kb_main():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -99,6 +99,7 @@ def kb_back():
     kb.add(InlineKeyboardButton("← Orqaga", callback_data="back"))
     return kb
 
+# ===== TEXT =====
 MSG_WELCOME = (
     "👋 Assalomu alaykum!\n\n"
     "🏫 10-MAKTAB BOSHQARUV TIZIMI\n\n"
@@ -113,6 +114,7 @@ INFO_TEXTS = {
     "contact": "📩 Admin bilan bog'laning"
 }
 
+# ===== UTILS =====
 def is_logged_in(user_id):
     return sessions.get(user_id, {}).get("step") == "done"
 
@@ -128,44 +130,45 @@ def send_panel(chat_id):
     text = f"🟢 Kabinet: {username}\n📅 {now.strftime('%d.%m.%Y')} | 🕐 {now.strftime('%H:%M')}"
     bot.send_message(chat_id, text, reply_markup=kb_teacher())
 
+# ===== START =====
 @bot.message_handler(commands=["start"])
 def start(m):
     sessions.pop(m.chat.id, None)
     send_main(m.chat.id)
 
+# ===== LOGIN (FIXED) =====
 @bot.message_handler(func=lambda m: True)
-def login(m):
+def login_handler(m):
     user_id = m.chat.id
     session = sessions.get(user_id)
 
-    if not session or session.get("step") == "done":
-        bot.send_message(user_id, "Menyu uchun /start bosing")
+    # ❗ faqat login jarayonida ishlaydi
+    if not session:
+        return
+
+    if session.get("step") == "done":
         return
 
     if session["step"] == "user":
         if m.text not in TEACHERS:
-            bot.send_message(user_id, "User topilmadi")
+            bot.send_message(user_id, "❌ User topilmadi")
             return
         sessions[user_id]["temp"] = m.text
         sessions[user_id]["step"] = "pass"
-        bot.send_message(user_id, "Parol kiriting")
+        bot.send_message(user_id, "🔒 Parol kiriting")
 
     elif session["step"] == "pass":
         username = session.get("temp")
         hashed = hashlib.sha256(m.text.encode()).hexdigest()
-
-        try:
-            bot.delete_message(user_id, m.message_id)
-        except:
-            pass
 
         if TEACHERS.get(username) == hashed:
             sessions[user_id] = {"step": "done", "username": username}
             send_panel(user_id)
         else:
             sessions.pop(user_id)
-            bot.send_message(user_id, "Xato login")
+            bot.send_message(user_id, "❌ Login xato")
 
+# ===== CALLBACK =====
 @bot.callback_query_handler(func=lambda call: True)
 def call_handler(call):
     user_id = call.message.chat.id
@@ -184,7 +187,7 @@ def call_handler(call):
 
     if data == "login":
         sessions[user_id] = {"step": "user"}
-        bot.send_message(user_id, "Username kiriting")
+        bot.send_message(user_id, "👤 Username kiriting")
         return
 
     if data in INFO_TEXTS:
@@ -192,31 +195,32 @@ def call_handler(call):
         return
 
     if not is_logged_in(user_id):
-        bot.send_message(user_id, "Avval login qiling", reply_markup=kb_main())
+        bot.send_message(user_id, "❗ Avval login qiling", reply_markup=kb_main())
         return
 
     username = get_username(user_id)
 
     if data == "keldi":
         record_attendance(username, "Keldi")
-        bot.send_message(user_id, "Keldi belgilandi")
+        bot.send_message(user_id, "🟢 Keldi belgilandi")
 
     elif data == "ketdi":
         record_attendance(username, "Ketdi")
-        bot.send_message(user_id, "Ketdi belgilandi")
+        bot.send_message(user_id, "🔴 Ketdi belgilandi")
 
     elif data == "uzrli":
         record_attendance(username, "Uzrli")
-        bot.send_message(user_id, "Uzrli belgilandi")
+        bot.send_message(user_id, "🟡 Uzrli belgilandi")
 
     elif data == "stat":
         db = load_data()
         today = get_today()
+
         if today not in db:
-            bot.send_message(user_id, "Ma'lumot yo'q")
+            bot.send_message(user_id, "📭 Bugun ma'lumot yo'q")
             return
 
-        msg = f"{today} DAVOMAT\n\n"
+        msg = f"📊 {today} DAVOMAT\n\n"
         for r in db[today]:
             msg += f"{r['user']} | {r['status']} | {r['time']}\n"
 
@@ -225,14 +229,14 @@ def call_handler(call):
     elif data == "dates":
         db = load_data()
         if not db:
-            bot.send_message(user_id, "Ma'lumot yo'q")
+            bot.send_message(user_id, "📭 Ma'lumot yo'q")
             return
 
-        msg = "Sanalar:\n"
+        msg = "📅 Sanalar:\n\n"
         for d in db:
             msg += d + "\n"
 
         bot.send_message(user_id, msg)
 
-print("BOT ISHLAYAPTI")
+print("🚀 BOT ISHLAYAPTI")
 bot.infinity_polling()
