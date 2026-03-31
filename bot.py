@@ -1,4 +1,4 @@
-import telebot
+ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 from flask import Flask
@@ -11,10 +11,38 @@ TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 DATA_FILE = "attendance.json"
 TZ_OFFSET = 5
 
+def h(p):
+    return hashlib.sha256(p.encode()).hexdigest()
+
 TEACHERS = {
-    "feruza_01": hashlib.sha256("feruza1234".encode()).hexdigest(),
-    "feruza_02": hashlib.sha256("feruza1234".encode()).hexdigest(),
-}
+"dilara_abdullayeva": h("dilara452"),
+"nigora_abdurahmonova": h("nigora879"),
+"gulxon_abduraxmonova": h("gulxon098"),
+"sharofiddin_ahmedov": h("sharofiddin321"),
+"nafisa_akkulova": h("nafisa654"),
+"rano_aliyeva": h("rano111"),
+"feruza_alloberdiyeva": h("feruza222"),
+"gulpari_asrayeva": h("gulpari333"),
+"orzugul_bekmuradova": h("orzugul444"),
+"maftuna_egamberdiyeva": h("maftuna555"),
+"nargiz_hakimova": h("nargiz666"),
+"mavluda_ibragimjonova": h("mavluda777"),
+"olmasoy_karimova": h("olmasoy888"),
+"dilshoda_mamatqulova": h("dilshoda999"),
+"zulfiya_mamedova": h("zulfiya147"),
+"muhayyo_maxsudova": h("muhayyo258"),
+"izatulla_mirzakulov": h("izatulla369"),
+"dilbarbibi_nishonova": h("dilbarbibi159"),
+"gulandom_qurolova": h("gulandom753"),
+"robiya_rayimova": h("robiya852"),
+"nadira_rustamova": h("nadira951"),
+"shoxsanam_subanova": h("shoxsanam357"),
+"lobar_sulaymanova": h("lobar258"),
+"muslim_turgunbayev": h("muslim654"),
+"gulnoza_xalmanova": h("gulnoza741"),
+"olmasoy_shabazova": h("olmasoy852"),
+"jaxongir_isroilov": h("jaxongir963")
+} 
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -23,10 +51,10 @@ app = Flask(__name__)
 def home():
     return "Bot ishlayapti"
 
-def run_flask():
+def run():
     app.run(host="0.0.0.0", port=10000)
 
-threading.Thread(target=run_flask, daemon=True).start()
+threading.Thread(target=run, daemon=True).start()
 
 sessions = {}
 
@@ -44,199 +72,127 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def get_now():
+def now():
     return datetime.utcnow() + timedelta(hours=TZ_OFFSET)
 
-def get_today():
-    return get_now().strftime("%Y-%m-%d")
+def today():
+    return now().strftime("%Y-%m-%d")
 
-def get_time():
-    return get_now().strftime("%H:%M")
+def time_now():
+    return now().strftime("%H:%M")
 
-def record_attendance(username, status):
+def record(user, status):
     db = load_data()
-    today = get_today()
-    if today not in db:
-        db[today] = []
-    db[today].append({
-        "user": username,
-        "status": status,
-        "time": get_time()
-    })
+    d = today()
+    if d not in db:
+        db[d] = []
+    db[d].append({"user": user, "status": status, "time": time_now()})
     save_data(db)
 
-# ===== KEYBOARDS =====
-def kb_main():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("🏫 Maktab haqida", callback_data="school"),
-        InlineKeyboardButton("👨‍🏫 O'qituvchilar", callback_data="teachers"),
-    )
-    kb.add(
-        InlineKeyboardButton("📚 Sinflar", callback_data="classes"),
-        InlineKeyboardButton("📰 Yangiliklar", callback_data="news"),
-    )
-    kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
-    kb.add(InlineKeyboardButton("🔐 O'qituvchi kabineti", callback_data="login"))
+# ===== KEYBOARD =====
+def main_kb():
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🔐 Kabinet", callback_data="login"))
     return kb
 
-def kb_teacher():
+def panel_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("✅ Keldim", callback_data="keldi"),
         InlineKeyboardButton("🚪 Ketdim", callback_data="ketdi"),
     )
     kb.add(
-        InlineKeyboardButton("📋 Uzrli sabab", callback_data="uzrli"),
+        InlineKeyboardButton("📋 Uzrli", callback_data="uzrli"),
         InlineKeyboardButton("📊 Statistika", callback_data="stat"),
     )
     kb.add(InlineKeyboardButton("🗓 Sanalar", callback_data="dates"))
     kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
 
-def kb_back():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("← Orqaga", callback_data="back"))
-    return kb
-
-# ===== TEXT =====
-MSG_WELCOME = (
-    "👋 Assalomu alaykum!\n\n"
-    "🏫 10-MAKTAB BOSHQARUV TIZIMI\n\n"
-    "Quyidagilardan birini tanlang:"
-)
-
-INFO_TEXTS = {
-    "school": "🏫 Maktab haqida ma'lumot",
-    "teachers": "👨‍🏫 O'qituvchilar ro'yxati",
-    "classes": "📚 Sinflar",
-    "news": "📰 Yangiliklar",
-    "contact": "📩 Admin bilan bog'laning"
-}
-
-# ===== UTILS =====
-def is_logged_in(user_id):
-    return sessions.get(user_id, {}).get("step") == "done"
-
-def get_username(user_id):
-    return sessions.get(user_id, {}).get("username", "")
-
-def send_main(chat_id):
-    bot.send_message(chat_id, MSG_WELCOME, reply_markup=kb_main())
-
-def send_panel(chat_id):
-    username = get_username(chat_id)
-    now = get_now()
-    text = f"🟢 Kabinet: {username}\n📅 {now.strftime('%d.%m.%Y')} | 🕐 {now.strftime('%H:%M')}"
-    bot.send_message(chat_id, text, reply_markup=kb_teacher())
-
 # ===== START =====
 @bot.message_handler(commands=["start"])
 def start(m):
     sessions.pop(m.chat.id, None)
-    send_main(m.chat.id)
+    bot.send_message(m.chat.id, "🏫 Maktab tizimi", reply_markup=main_kb())
 
-# ===== LOGIN (FIXED) =====
+# ===== LOGIN =====
 @bot.message_handler(func=lambda m: True)
-def login_handler(m):
-    user_id = m.chat.id
-    session = sessions.get(user_id)
+def login(m):
+    uid = m.chat.id
+    s = sessions.get(uid)
 
-    # ❗ faqat login jarayonida ishlaydi
-    if not session:
+    if not s:
         return
 
-    if session.get("step") == "done":
+    if s.get("step") == "done":
         return
 
-    if session["step"] == "user":
+    if s["step"] == "user":
         if m.text not in TEACHERS:
-            bot.send_message(user_id, "❌ User topilmadi")
+            bot.send_message(uid, "❌ User topilmadi")
             return
-        sessions[user_id]["temp"] = m.text
-        sessions[user_id]["step"] = "pass"
-        bot.send_message(user_id, "🔒 Parol kiriting")
+        sessions[uid]["u"] = m.text
+        sessions[uid]["step"] = "pass"
+        bot.send_message(uid, "🔒 Parol")
 
-    elif session["step"] == "pass":
-        username = session.get("temp")
-        hashed = hashlib.sha256(m.text.encode()).hexdigest()
-
-        if TEACHERS.get(username) == hashed:
-            sessions[user_id] = {"step": "done", "username": username}
-            send_panel(user_id)
+    elif s["step"] == "pass":
+        u = s["u"]
+        if TEACHERS[u] == h(m.text):
+            sessions[uid] = {"step": "done", "u": u}
+            bot.send_message(uid, f"✅ Xush kelibsiz {u}", reply_markup=panel_kb())
         else:
-            sessions.pop(user_id)
-            bot.send_message(user_id, "❌ Login xato")
+            sessions.pop(uid)
+            bot.send_message(uid, "❌ Xato")
 
 # ===== CALLBACK =====
-@bot.callback_query_handler(func=lambda call: True)
-def call_handler(call):
-    user_id = call.message.chat.id
-    data = call.data
-    bot.answer_callback_query(call.id)
+@bot.callback_query_handler(func=lambda c: True)
+def call(c):
+    uid = c.message.chat.id
+    d = c.data
+    bot.answer_callback_query(c.id)
 
-    if data == "back":
-        sessions.pop(user_id, None)
-        send_main(user_id)
+    if d == "login":
+        sessions[uid] = {"step": "user"}
+        bot.send_message(uid, "👤 Username")
         return
 
-    if data == "logout":
-        sessions.pop(user_id, None)
-        send_main(user_id)
+    if d == "logout":
+        sessions.pop(uid, None)
+        bot.send_message(uid, "Chiqdingiz", reply_markup=main_kb())
         return
 
-    if data == "login":
-        sessions[user_id] = {"step": "user"}
-        bot.send_message(user_id, "👤 Username kiriting")
+    if sessions.get(uid, {}).get("step") != "done":
+        bot.send_message(uid, "Avval login qiling")
         return
 
-    if data in INFO_TEXTS:
-        bot.send_message(user_id, INFO_TEXTS[data], reply_markup=kb_back())
-        return
+    u = sessions[uid]["u"]
 
-    if not is_logged_in(user_id):
-        bot.send_message(user_id, "❗ Avval login qiling", reply_markup=kb_main())
-        return
+    if d == "keldi":
+        record(u, "Keldi")
+        bot.send_message(uid, "🟢 Keldi")
 
-    username = get_username(user_id)
+    elif d == "ketdi":
+        record(u, "Ketdi")
+        bot.send_message(uid, "🔴 Ketdi")
 
-    if data == "keldi":
-        record_attendance(username, "Keldi")
-        bot.send_message(user_id, "🟢 Keldi belgilandi")
+    elif d == "uzrli":
+        record(u, "Uzrli")
+        bot.send_message(uid, "🟡 Uzrli")
 
-    elif data == "ketdi":
-        record_attendance(username, "Ketdi")
-        bot.send_message(user_id, "🔴 Ketdi belgilandi")
-
-    elif data == "uzrli":
-        record_attendance(username, "Uzrli")
-        bot.send_message(user_id, "🟡 Uzrli belgilandi")
-
-    elif data == "stat":
+    elif d == "stat":
         db = load_data()
-        today = get_today()
-
-        if today not in db:
-            bot.send_message(user_id, "📭 Bugun ma'lumot yo'q")
+        t = today()
+        if t not in db:
+            bot.send_message(uid, "Bo‘sh")
             return
+        msg = f"{t}\n"
+        for i in db[t]:
+            msg += f"{i['user']} | {i['status']} | {i['time']}\n"
+        bot.send_message(uid, msg)
 
-        msg = f"📊 {today} DAVOMAT\n\n"
-        for r in db[today]:
-            msg += f"{r['user']} | {r['status']} | {r['time']}\n"
-
-        bot.send_message(user_id, msg)
-
-    elif data == "dates":
+    elif d == "dates":
         db = load_data()
-        if not db:
-            bot.send_message(user_id, "📭 Ma'lumot yo'q")
-            return
+        bot.send_message(uid, "\n".join(db.keys()) if db else "Bo‘sh")
 
-        msg = "📅 Sanalar:\n\n"
-        for d in db:
-            msg += d + "\n"
-
-        bot.send_message(user_id, msg)
-
-print("🚀 BOT ISHLAYAPTI")
+print("🚀 ISHLAYAPTI")
 bot.infinity_polling()
