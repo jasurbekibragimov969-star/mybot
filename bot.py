@@ -1,4 +1,4 @@
- import telebot
+import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 from flask import Flask
@@ -42,7 +42,7 @@ TEACHERS = {
 "gulnoza_xalmanova": h("gulnoza741"),
 "olmasoy_shabazova": h("olmasoy852"),
 "jaxongir_isroilov": h("jaxongir963")
-} 
+}
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -62,11 +62,8 @@ sessions = {}
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -105,7 +102,6 @@ def panel_kb():
         InlineKeyboardButton("📋 Uzrli", callback_data="uzrli"),
         InlineKeyboardButton("📊 Statistika", callback_data="stat"),
     )
-    kb.add(InlineKeyboardButton("🗓 Sanalar", callback_data="dates"))
     kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
 
@@ -182,17 +178,19 @@ def call(c):
     elif d == "stat":
         db = load_data()
         t = today()
-        if t not in db:
-            bot.send_message(uid, "Bo‘sh")
-            return
-        msg = f"{t}\n"
-        for i in db[t]:
-            msg += f"{i['user']} | {i['status']} | {i['time']}\n"
-        bot.send_message(uid, msg)
 
-    elif d == "dates":
-        db = load_data()
-        bot.send_message(uid, "\n".join(db.keys()) if db else "Bo‘sh")
+        msg = f"📊 {t} DAVOMAT\n\n"
+
+        today_data = db.get(t, [])
+        done_users = {i["user"]: i["status"] for i in today_data}
+
+        for teacher in TEACHERS.keys():
+            if teacher in done_users:
+                msg += f"🟢 {teacher} — {done_users[teacher]}\n"
+            else:
+                msg += f"🔴 {teacher} — Belgilanmadi\n"
+
+        bot.send_message(uid, msg)
 
 print("🚀 ISHLAYAPTI")
 bot.infinity_polling()
