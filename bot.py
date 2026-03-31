@@ -8,7 +8,7 @@ import os
 import hashlib
 
 # CONFIG
-TOKEN = "TOKENINGNI_QO'Y"
+TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 TZ_OFFSET = 5
 
 bot = telebot.TeleBot(TOKEN)
