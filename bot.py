@@ -195,30 +195,52 @@ def call_handler(call):
         record_attendance(username, "Keldi")
         bot.send_message(uid, "✅ Keldi belgilandi")
 
-    if data == "att_ketdi":
+        if data == "att_keldi":
+        record_attendance(username, "Keldi")
+        bot.send_message(uid, "✅ Keldi belgilandi")
+
+    elif data == "att_ketdi":
         record_attendance(username, "Ketdi")
         bot.send_message(uid, "🚪 Ketdi belgilandi")
 
-    if data == "att_uzrli":
+    elif data == "att_uzrli":
         record_attendance(username, "Uzrli")
         bot.send_message(uid, "📋 Uzrli sabab belgilandi")
 
-   if data == "att_stat":
-    db = load_attendance()
-    today = get_today()
-    teachers = load_teachers()
+    elif data == "att_stat":
+        db = load_attendance()
+        today = get_today()
+        teachers = load_teachers()
 
-    msg = f"📊 {today}\n\n"
-    marked = {r["user"]: r for r in db.get(today, [])}
+        msg = f"📊 {today}\n\n"
+        marked = {r["user"]: r for r in db.get(today, [])}
 
-    for t in teachers:
-        if t in marked:
-            msg += f"🟢 {t} — {marked[t]['status']}\n"
-        else:
-            msg += f"🔴 {t} — belgilanmadi\n"
+        for t in teachers:
+            if t in marked:
+                msg += f"🟢 {t} — {marked[t]['status']}\n"
+            else:
+                msg += f"🔴 {t} — belgilanmadi\n"
 
-    bot.send_message(uid, msg)
+        bot.send_message(uid, msg)
 
+    elif data == "att_history":
+        db = load_attendance()
+
+        if not db:
+            bot.send_message(uid, "📭 Hali tarix yo'q")
+            return
+
+        msg = "📜 Davomat tarixi:\n\n"
+
+        for date in sorted(db.keys(), reverse=True):
+            msg += f"📅 {date}\n"
+
+            for r in db[date]:
+                msg += f" - {r['user']} | {r['status']} | {r['time']}\n"
+
+            msg += "\n"
+
+        bot.send_message(uid, msg)
 if data == "att_history":
     db = load_attendance()
 
