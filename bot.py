@@ -26,6 +26,7 @@ threading.Thread(target=lambda: app.run(host="0.0.0.0", port=10000), daemon=True
 
 sessions = {}
 
+# ===== UTILS =====
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -147,6 +148,32 @@ def call_handler(call):
     data = call.data
     bot.answer_callback_query(call.id)
 
+    # PUBLIC BO'LIMLAR
+    if data == "school":
+        bot.send_message(uid, "🏫 Maktab haqida ma'lumot...")
+        return
+
+    if data == "teachers":
+        teachers = load_teachers()
+        msg = "👨‍🏫 O'qituvchilar:\n\n"
+        for t in teachers:
+            msg += f"• {t}\n"
+        bot.send_message(uid, msg)
+        return
+
+    if data == "classes":
+        bot.send_message(uid, "📚 Sinflar bo'limi")
+        return
+
+    if data == "news":
+        bot.send_message(uid, "📰 Yangiliklar")
+        return
+
+    if data == "contact":
+        bot.send_message(uid, "📩 Admin bilan bog'laning")
+        return
+
+    # LOGIN
     if data == "login":
         sessions[uid] = {"step": "user"}
         bot.send_message(uid, "Username kiriting")
