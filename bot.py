@@ -128,6 +128,7 @@ def kb_teacher_panel():
     kb.add(
         InlineKeyboardButton("📋 Uzrli sabab", callback_data="att_uzrli"),
         InlineKeyboardButton("📊 Bugungi holat", callback_data="att_stat"),
+        InlineKeyboardButton("📜 Tarix", callback_data="att_history"),
     )
     kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
@@ -143,7 +144,7 @@ def start(m):
 
 # ===== CALLBACK =====
 @bot.callback_query_handler(func=lambda call: True)
-def call_handler(call):
+def call_handler(call):	
     uid = call.message.chat.id
     data = call.data
     bot.answer_callback_query(call.id)
@@ -170,7 +171,7 @@ def call_handler(call):
         return
 
     if data == "contact":
-        bot.send_message(uid, "📩 Admin bilan bog'laning")
+        bot.send_message(uid, "📩 Admin bilan bog'laning @zkurtuve")
         return
 
     # LOGIN
@@ -202,6 +203,24 @@ def call_handler(call):
         bot.send_message(uid, "📋 Uzrli sabab belgilandi")
 
     if data == "att_stat":
+    if data == "att_history":
+    db = load_attendance()
+
+    if not db:
+        bot.send_message(uid, "📭 Hali tarix yo'q")
+        return
+
+    msg = "📜 Davomat tarixi:\n\n"
+
+    for date in sorted(db.keys(), reverse=True):
+        msg += f"📅 {date}\n"
+
+        for r in db[date]:
+            msg += f" - {r['user']} | {r['status']} | {r['time']}\n"
+
+        msg += "\n"
+
+    bot.send_message(uid, msg)
         db = load_attendance()
         today = get_today()
         teachers = load_teachers()
