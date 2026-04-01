@@ -49,29 +49,6 @@ DEFAULT_TEACHERS = {
     "nigora_abdurahmonova": hash_password("nigora879"),
     "gulxon_abduraxmonova": hash_password("gulxon098"),
     "sharofiddin_ahmedov": hash_password("sharofiddin321"),
-    "nafisa_akkulova": hash_password("nafisa654"),
-    "rano_aliyeva": hash_password("rano111"),
-    "feruza_alloberdiyeva": hash_password("feruza222"),
-    "gulpari_asrayeva": hash_password("gulpari333"),
-    "orzugul_bekmuradova": hash_password("orzugul444"),
-    "maftuna_egamberdiyeva": hash_password("maftuna555"),
-    "nargiz_hakimova": hash_password("nargiz666"),
-    "mavluda_ibragimjonova": hash_password("mavluda777"),
-    "olmasoy_karimova": hash_password("olmasoy888"),
-    "dilshoda_mamatqulova": hash_password("dilshoda999"),
-    "zulfiya_mamedova": hash_password("zulfiya147"),
-    "muhayyo_maxsudova": hash_password("muhayyo258"),
-    "izatulla_mirzakulov": hash_password("izatulla369"),
-    "dilbarbibi_nishonova": hash_password("dilbarbibi159"),
-    "gulandom_qurolova": hash_password("gulandom753"),
-    "robiya_rayimova": hash_password("robiya852"),
-    "nadira_rustamova": hash_password("nadira951"),
-    "shoxsanam_subanova": hash_password("shoxsanam357"),
-    "lobar_sulaymanova": hash_password("lobar258"),
-    "muslim_turgunbayev": hash_password("muslim654"),
-    "gulnoza_xalmanova": hash_password("gulnoza741"),
-    "olmasoy_shabazova": hash_password("olmasoy852"),
-    "jaxongir_isroilov": hash_password("jaxongir963"),
 }
 
 def load_teachers():
@@ -129,8 +106,8 @@ def kb_teacher_panel():
     kb.add(
         InlineKeyboardButton("📋 Uzrli sabab", callback_data="att_uzrli"),
         InlineKeyboardButton("📊 Bugungi holat", callback_data="att_stat"),
-        InlineKeyboardButton("📜 Tarix", callback_data="att_history"),
     )
+    kb.add(InlineKeyboardButton("📜 Tarix", callback_data="att_history"))
     kb.add(InlineKeyboardButton("← Chiqish", callback_data="logout"))
     return kb
 
@@ -145,12 +122,12 @@ def start(m):
 
 # ===== CALLBACK =====
 @bot.callback_query_handler(func=lambda call: True)
-def call_handler(call):	
+def call_handler(call):
     uid = call.message.chat.id
     data = call.data
     bot.answer_callback_query(call.id)
 
-    # PUBLIC BO'LIMLAR
+    # PUBLIC
     if data == "school":
         bot.send_message(uid, "🏫 Maktab haqida ma'lumot...")
         return
@@ -195,10 +172,6 @@ def call_handler(call):
         record_attendance(username, "Keldi")
         bot.send_message(uid, "✅ Keldi belgilandi")
 
-        if data == "att_keldi":
-        record_attendance(username, "Keldi")
-        bot.send_message(uid, "✅ Keldi belgilandi")
-
     elif data == "att_ketdi":
         record_attendance(username, "Ketdi")
         bot.send_message(uid, "🚪 Ketdi belgilandi")
@@ -234,31 +207,12 @@ def call_handler(call):
 
         for date in sorted(db.keys(), reverse=True):
             msg += f"📅 {date}\n"
-
             for r in db[date]:
                 msg += f" - {r['user']} | {r['status']} | {r['time']}\n"
-
             msg += "\n"
 
         bot.send_message(uid, msg)
-if data == "att_history":
-    db = load_attendance()
 
-    if not db:
-        bot.send_message(uid, "📭 Hali tarix yo'q")
-        return
-
-    msg = "📜 Davomat tarixi:\n\n"
-
-    for date in sorted(db.keys(), reverse=True):
-        msg += f"📅 {date}\n"
-
-        for r in db[date]:
-            msg += f" - {r['user']} | {r['status']} | {r['time']}\n"
-
-        msg += "\n"
-
-    bot.send_message(uid, msg)
 # ===== LOGIN =====
 @bot.message_handler(func=lambda m: True)
 def login(m):
