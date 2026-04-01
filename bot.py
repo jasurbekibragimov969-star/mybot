@@ -100,7 +100,8 @@ def record_attendance(username, status):
     db.setdefault(today, [])
     db[today].append({
         "user": username,
-        "status": status
+        "status": status,
+        "time": get_now().strftime("%H:%M")
     })
     save_attendance(db)
 
@@ -202,8 +203,23 @@ def call_handler(call):
         record_attendance(username, "Uzrli")
         bot.send_message(uid, "📋 Uzrli sabab belgilandi")
 
-    if data == "att_stat":
-    if data == "att_history":
+   if data == "att_stat":
+    db = load_attendance()
+    today = get_today()
+    teachers = load_teachers()
+
+    msg = f"📊 {today}\n\n"
+    marked = {r["user"]: r for r in db.get(today, [])}
+
+    for t in teachers:
+        if t in marked:
+            msg += f"🟢 {t} — {marked[t]['status']}\n"
+        else:
+            msg += f"🔴 {t} — belgilanmadi\n"
+
+    bot.send_message(uid, msg)
+
+if data == "att_history":
     db = load_attendance()
 
     if not db:
@@ -221,21 +237,6 @@ def call_handler(call):
         msg += "\n"
 
     bot.send_message(uid, msg)
-        db = load_attendance()
-        today = get_today()
-        teachers = load_teachers()
-
-        msg = f"📊 {today}\n\n"
-        marked = {r["user"]: r for r in db.get(today, [])}
-
-        for t in teachers:
-            if t in marked:
-                msg += f"🟢 {t} — {marked[t]['status']}\n"
-            else:
-                msg += f"🔴 {t} — belgilanmadi\n"
-
-        bot.send_message(uid, msg)
-
 # ===== LOGIN =====
 @bot.message_handler(func=lambda m: True)
 def login(m):
