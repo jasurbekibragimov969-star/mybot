@@ -220,7 +220,7 @@ def cb(call):
         bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
 
     elif data == "school":
-        bot.send_message(uid, "1-qator\n2-qator\n3-qator\n4-qator\n5-qator\n6-qator")
+        bot.send_message(uid, "Olmaliq shaxar 10-umumiy o'rta ta'lim maktabi\n2-qator\n3-qator\n4-qator\n5-qator\n6-qator")
 
     elif data == "classes":
         bot.send_message(uid, "Sinflar", reply_markup=kb_classes())
