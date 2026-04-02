@@ -12,8 +12,8 @@ TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 TZ_OFFSET = 5
 
 # WEB ADMIN LOGIN
-ADMIN_USERNAME = "zkurtuve"
-ADMIN_PASSWORD = "20091608"
+ADMIN_USERNAME = "maktab10"
+ADMIN_PASSWORD = "maktab1010"
 
 TEACHER_CREDENTIALS = {
     "dilara_abdullayeva": "dilara452",
@@ -99,10 +99,15 @@ def get_time():
 def record(user, status):
     db = load_attendance()
     today = get_today()
-    db.setdefault(today, [])
-    db[today].append({"user": user, "status": status, "time": get_time()})
-    save_attendance(db)
 
+    db.setdefault(today, {})
+
+    db[today][user] = {
+        "status": status,
+        "time": get_time()
+    }
+
+    save_attendance(db)
 
 def build_daily_status_map(records):
     status_map = {}
@@ -137,7 +142,7 @@ def admin():
 @app.route("/dashboard")
 def dashboard():
     db = load_attendance()
-    html = "<h1>Davomat</h1><a href='/add'>➕ O‘qituvchi qo‘shish</a><br><br>"
+    html = "<h1>Davomat✅</h1><a href='/add'>➕ O‘qituvchi qo‘shish</a><br><br>"
 
     for date_key in sorted(db.keys(), reverse=True):
         html += f"<h3>{date_key}</h3>"
@@ -194,11 +199,11 @@ def kb_teachers():
 
 def kb_panel():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("Keldim", callback_data="keldi"))
-    kb.add(InlineKeyboardButton("Ketdim", callback_data="ketdi"))
-    kb.add(InlineKeyboardButton("Uzrli sabab", callback_data="uzrli"))
-    kb.add(InlineKeyboardButton("Statistika", callback_data="stat"))
-    kb.add(InlineKeyboardButton("Tarix", callback_data="history"))
+    kb.add(InlineKeyboardButton("Keldim👍", callback_data="keldi"))
+    kb.add(InlineKeyboardButton("Ketdim🫡", callback_data="ketdi"))
+    kb.add(InlineKeyboardButton("Uzrli sabab‼️", callback_data="uzrli"))
+    kb.add(InlineKeyboardButton("Statistika📊", callback_data="stat"))
+    kb.add(InlineKeyboardButton("Tarix⌛", callback_data="history"))
     kb.add(InlineKeyboardButton("⬅️ Chiqish", callback_data="logout"))
     return kb
 
@@ -244,56 +249,79 @@ def cb(call):
 
     elif data == "logout":
         sessions.pop(uid, None)
-        bot.send_message(uid, "Chiqildi", reply_markup=kb_main())
+        bot.send_message(uid, "Chiqildi🫡", reply_markup=kb_main())
 
     elif uid in sessions and sessions[uid].get("ok"):
         user = sessions[uid]["u"]
 
         if data == "keldi":
             record(user, "Keldi")
-            bot.send_message(uid, "Belgilandi: Keldi")
+            bot.send_message(uid, "Belgilandi: Keldi👏")
 
         elif data == "ketdi":
             record(user, "Ketdi")
-            bot.send_message(uid, "Belgilandi: Ketdi")
+            bot.send_message(uid, "Belgilandi: Ketdi🤝")
 
         elif data == "uzrli":
             record(user, "Uzrli")
-            bot.send_message(uid, "Belgilandi: Uzrli")
+            bot.send_message(uid, "Belgilandi: Uzrli👌")
 
         elif data == "stat":
-            db = load_attendance()
-            today = get_today()
-            status_map = build_daily_status_map(db.get(today, []))
+    db = load_attendance()
+    today = get_today()
 
-            lines = [f"Statistika ({today})"]
-            for teacher in load_teachers().keys():
-                status = status_map.get(teacher, "Belgilanmagan")
-                if status == "Keldi":
-                    icon = "🟢"
-                elif status == "Ketdi":
-                    icon = "🔵"
-                elif status == "Uzrli":
-                    icon = "🟡"
-                else:
-                    icon = "⚫"
-                lines.append(f"{icon} {teacher} — {status}")
+    teachers = load_teachers()
+    today_data = db.get(today, {})
 
-            bot.send_message(uid, "\n".join(lines))
+    lines = [f"Statistika ({today})"]
 
-        elif data == "history":
-            db = load_attendance()
-            if not db:
-                bot.send_message(uid, "Tarix bo‘sh")
-                return
+    for teacher in teachers.keys():
+        info = today_data.get(teacher)
 
-            lines = ["Tarix"]
-            for date_key in sorted(db.keys(), reverse=True):
-                lines.append(f"\n📅 {date_key}")
-                for row in db[date_key]:
-                    lines.append(f"{row['user']} | {row['status']} | {row['time']}")
+        if info:
+            status = info["status"]
+            time = info["time"]
 
-            bot.send_message(uid, "\n".join(lines))
+            if status == "Keldi":
+                icon = "🟢"
+            elif status == "Ketdi":
+                icon = "🔵"
+            elif status == "Uzrli":
+                icon = "🟡"
+            else:
+                icon = "⚫"
+
+            lines.append(f"{icon} {teacher} — {status} ({time})")
+
+        else:
+            lines.append(f"⚫ {teacher} — Belgilanmagan😠")
+
+    bot.send_message(uid, "\n".join(lines))
+
+elif data == "history":
+    db = load_attendance()
+    teachers = load_teachers()
+
+    if not db:
+        bot.send_message(uid, "Tarix bo‘sh")
+        return
+
+    lines = ["Keldi ketdi tarixi"]
+
+    for date_key in sorted(db.keys(), reverse=True):
+        lines.append(f"\n📅 {date_key}")
+
+        day_data = db.get(date_key, {})
+
+        for teacher in teachers.keys():
+            info = day_data.get(teacher)
+
+            if info:
+                lines.append(f"{teacher} — {info['status']} ({info['time']})")
+            else:
+                lines.append(f"{teacher} — Belgilanmagan")
+
+    bot.send_message(uid, "\n".join(lines))
 
 
 # ===== LOGIN =====
@@ -306,7 +334,7 @@ def login(message):
     if sessions[uid]["step"] == "u":
         sessions[uid]["u"] = message.text
         sessions[uid]["step"] = "p"
-        bot.send_message(uid, "Parol")
+        bot.send_message(uid, "Parol🧐")
 
     elif sessions[uid]["step"] == "p":
         teachers = load_teachers()
@@ -314,7 +342,7 @@ def login(message):
             sessions[uid]["ok"] = True
             bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
         else:
-            bot.send_message(uid, "Xato")
+            bot.send_message(uid, "Xato🤗")
 
 
 # Ensure required teachers are present at startup.
