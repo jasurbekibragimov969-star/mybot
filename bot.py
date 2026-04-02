@@ -3,25 +3,119 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 from flask import Flask, request, redirect
 from datetime import datetime, timedelta
-import json, os, hashlib
+import json
+import os
+import hashlib
 
 # CONFIG
-TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
+TOKEN = "8665940219:AAGZ8w4g83Z8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 TZ_OFFSET = 5
 
 # WEB ADMIN LOGIN
 ADMIN_USERNAME = "zkurtuve"
 ADMIN_PASSWORD = "20091608"
 
+TEACHER_CREDENTIALS = {
+    "dilara_abdullayeva": "dilara452",
+    "nigora_abdurahmonova": "nigora879",
+    "gulxon_abduraxmonova": "gulxon098",
+    "sharofiddin_ahmedov": "sharofiddin321",
+    "nafisa_akkulova": "nafisa654",
+    "rano_aliyeva": "rano111",
+    "feruza_alloberdiyeva": "feruza222",
+    "gulpari_asrayeva": "gulpari333",
+    "orzugul_bekmuradova": "orzugul444",
+    "maftuna_egamberdiyeva": "maftuna555",
+    "nargiz_hakimova": "nargiz666",
+    "mavluda_ibragimjonova": "mavluda777",
+    "olmasoy_karimova": "olmasoy888",
+    "dilshoda_mamatqulova": "dilshoda999",
+    "zulfiya_mamedova": "zulfiya147",
+    "muhayyo_maxsudova": "muhayyo258",
+    "izatulla_mirzakulov": "izatulla369",
+    "dilbarbibi_nishonova": "dilbarbibi159",
+    "gulandom_qurolova": "gulandom753",
+    "robiya_rayimova": "robiya852",
+    "nadira_rustamova": "nadira951",
+    "shoxsanam_subanova": "shoxsanam357",
+    "lobar_sulaymanova": "lobar258",
+    "muslim_turgunbayev": "muslim654",
+    "gulnoza_xalmanova": "gulnoza741",
+    "olmasoy_shabazova": "olmasoy852",
+    "jaxongir_isroilov": "jaxongir963",
+}
+
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 sessions = {}
 
+
+# ===== UTILS =====
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def load_teachers():
+    teachers = {}
+    if os.path.exists("teachers.json"):
+        with open("teachers.json", "r", encoding="utf-8") as file:
+            teachers = json.load(file)
+
+    updated = False
+    for username, plain_password in TEACHER_CREDENTIALS.items():
+        hashed_password = hash_password(plain_password)
+        if teachers.get(username) != hashed_password:
+            teachers[username] = hashed_password
+            updated = True
+
+    if updated or not os.path.exists("teachers.json"):
+        with open("teachers.json", "w", encoding="utf-8") as file:
+            json.dump(teachers, file, ensure_ascii=False, indent=2)
+
+    return teachers
+
+
+def load_attendance():
+    if not os.path.exists("att.json"):
+        return {}
+    with open("att.json", "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def save_attendance(data):
+    with open("att.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+
+
+def get_today():
+    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d")
+
+
+def get_time():
+    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%H:%M")
+
+
+def record(user, status):
+    db = load_attendance()
+    today = get_today()
+    db.setdefault(today, [])
+    db[today].append({"user": user, "status": status, "time": get_time()})
+    save_attendance(db)
+
+
+def build_daily_status_map(records):
+    status_map = {}
+    for item in records:
+        status_map[item["user"]] = item["status"]
+    return status_map
+
+
 # ===== WEB =====
 @app.route("/")
 def home():
     return "Bot ishlayapti"
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
@@ -39,23 +133,26 @@ def admin():
     </form>
     '''
 
+
 @app.route("/dashboard")
 def dashboard():
     db = load_attendance()
     html = "<h1>Davomat</h1><a href='/add'>➕ O‘qituvchi qo‘shish</a><br><br>"
 
-    for d in db:
-        html += f"<h3>{d}</h3>"
-        for r in db[d]:
-            html += f"{r['user']} | {r['status']} | {r['time']}<br>"
+    for date_key in sorted(db.keys(), reverse=True):
+        html += f"<h3>{date_key}</h3>"
+        for row in db[date_key]:
+            html += f"{row['user']} | {row['status']} | {row['time']}<br>"
     return html
 
-@app.route("/add", methods=["GET","POST"])
+
+@app.route("/add", methods=["GET", "POST"])
 def add():
     if request.method == "POST":
-        t = load_teachers()
-        t[request.form.get("u")] = hash_password(request.form.get("p"))
-        json.dump(t, open("teachers.json","w"))
+        teachers = load_teachers()
+        teachers[request.form.get("u")] = hash_password(request.form.get("p"))
+        with open("teachers.json", "w", encoding="utf-8") as file:
+            json.dump(teachers, file, ensure_ascii=False, indent=2)
         return "Qo‘shildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
@@ -66,158 +163,165 @@ def add():
     </form>
     '''
 
+
 threading.Thread(target=lambda: app.run(host="0.0.0.0", port=10000), daemon=True).start()
 
-# ===== UTILS =====
-def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
-
-def load_teachers():
-    if not os.path.exists("teachers.json"):
-        return {}
-    return json.load(open("teachers.json"))
-
-def load_attendance():
-    if not os.path.exists("att.json"):
-        return {}
-    return json.load(open("att.json"))
-
-def save_attendance(d):
-    json.dump(d, open("att.json","w"))
-
-def get_today():
-    return (datetime.utcnow()+timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d")
-
-def get_time():
-    return (datetime.utcnow()+timedelta(hours=TZ_OFFSET)).strftime("%H:%M")
-
-def record(user, status):
-    db = load_attendance()
-    t = get_today()
-    db.setdefault(t, [])
-    db[t].append({"user":user,"status":status,"time":get_time()})
-    save_attendance(db)
 
 # ===== KEYBOARD =====
 def kb_main():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🏫 Maktab",callback_data="school"))
-    kb.add(InlineKeyboardButton("📚 Sinflar",callback_data="classes"))
-    kb.add(InlineKeyboardButton("👨‍🏫 O'qituvchilar",callback_data="teachers"))
-    kb.add(InlineKeyboardButton("🔐 Kabinet",callback_data="login"))
-    kb.add(InlineKeyboardButton("📩 Murojaat",callback_data="contact"))
+    kb.add(InlineKeyboardButton("🏫 Maktab", callback_data="school"))
+    kb.add(InlineKeyboardButton("📚 Sinflar", callback_data="classes"))
+    kb.add(InlineKeyboardButton("👨‍🏫 O'qituvchilar", callback_data="teachers"))
+    kb.add(InlineKeyboardButton("🔐 Kabinet", callback_data="login"))
+    kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
     return kb
+
 
 def kb_classes():
     kb = InlineKeyboardMarkup(row_width=2)
-    classes = ["1-a","2-a","3-a","3-b","4-a","5-a","6-a","6-b","7-a","8-a","9-a","9-b","10-a","11-a"]
-    for c in classes:
-        kb.add(InlineKeyboardButton(c.upper(),callback_data="c_"+c))
-    kb.add(InlineKeyboardButton("⬅️ Orqaga",callback_data="back"))
+    classes = ["1-a", "2-a", "3-a", "3-b", "4-a", "5-a", "6-a", "6-b", "7-a", "8-a", "9-a", "9-b", "10-a", "11-a"]
+    for c_name in classes:
+        kb.add(InlineKeyboardButton(c_name.upper(), callback_data="c_" + c_name))
+    kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
     return kb
+
 
 def kb_teachers():
     kb = InlineKeyboardMarkup()
-    for t in load_teachers():
-        kb.add(InlineKeyboardButton(t,callback_data="t_"+t))
-    kb.add(InlineKeyboardButton("⬅️ Orqaga",callback_data="back"))
+    for teacher in load_teachers().keys():
+        kb.add(InlineKeyboardButton(teacher, callback_data="t_" + teacher))
+    kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
     return kb
+
 
 def kb_panel():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("✅ Keldim",callback_data="keldi"))
-    kb.add(InlineKeyboardButton("📊 Statistika",callback_data="stat"))
-    kb.add(InlineKeyboardButton("📜 Tarix",callback_data="history"))
-    kb.add(InlineKeyboardButton("⬅️ Chiqish",callback_data="logout"))
+    kb.add(InlineKeyboardButton("Keldim", callback_data="keldi"))
+    kb.add(InlineKeyboardButton("Ketdim", callback_data="ketdi"))
+    kb.add(InlineKeyboardButton("Uzrli sabab", callback_data="uzrli"))
+    kb.add(InlineKeyboardButton("Statistika", callback_data="stat"))
+    kb.add(InlineKeyboardButton("Tarix", callback_data="history"))
+    kb.add(InlineKeyboardButton("⬅️ Chiqish", callback_data="logout"))
     return kb
+
 
 # ===== START =====
 @bot.message_handler(commands=["start"])
-def start(m):
-    sessions.pop(m.chat.id, None)
-    bot.send_message(m.chat.id,"🏫 Tizim",reply_markup=kb_main())
+def start(message):
+    sessions.pop(message.chat.id, None)
+    bot.send_message(message.chat.id, "🏫 Tizim", reply_markup=kb_main())
+
 
 # ===== CALLBACK =====
-@bot.callback_query_handler(func=lambda c:True)
-def cb(c):
-    uid=c.message.chat.id
-    d=c.data
+@bot.callback_query_handler(func=lambda c: True)
+def cb(call):
+    uid = call.message.chat.id
+    data = call.data
 
-    if d=="back":
-        bot.send_message(uid,"🏫 Tizim",reply_markup=kb_main())
+    if data == "back":
+        bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
 
-    elif d=="school":
-        bot.send_message(uid,"1-qator\n2-qator\n3-qator\n4-qator\n5-qator\n6-qator")
+    elif data == "school":
+        bot.send_message(uid, "1-qator\n2-qator\n3-qator\n4-qator\n5-qator\n6-qator")
 
-    elif d=="classes":
-        bot.send_message(uid,"Sinflar",reply_markup=kb_classes())
+    elif data == "classes":
+        bot.send_message(uid, "Sinflar", reply_markup=kb_classes())
 
-    elif d.startswith("c_"):
-        bot.send_message(uid,"O‘quvchi soni: ...\nSinf rahbari: ...")
+    elif data.startswith("c_"):
+        bot.send_message(uid, "O‘quvchi soni: ...\nSinf rahbari: ...")
 
-    elif d=="teachers":
-        bot.send_message(uid,"O‘qituvchilar",reply_markup=kb_teachers())
+    elif data == "teachers":
+        bot.send_message(uid, "O‘qituvchilar", reply_markup=kb_teachers())
 
-    elif d.startswith("t_"):
-        name=d[2:]
-        bot.send_message(uid,f"{name}\nFan: ...\nToifa: ...\nAloqa: ...")
+    elif data.startswith("t_"):
+        name = data[2:]
+        bot.send_message(uid, f"{name}\nFan: ...\nToifa: ...\nAloqa: ...")
 
-    elif d=="contact":
-        bot.send_message(uid,"@zkurtuve")
+    elif data == "contact":
+        bot.send_message(uid, "@zkurtuve")
 
-    elif d=="login":
-        sessions[uid]={"step":"u"}
-        bot.send_message(uid,"Username")
+    elif data == "login":
+        sessions[uid] = {"step": "u"}
+        bot.send_message(uid, "Username")
 
-    elif d=="logout":
-        sessions.pop(uid,None)
-        bot.send_message(uid,"Chiqildi",reply_markup=kb_main())
+    elif data == "logout":
+        sessions.pop(uid, None)
+        bot.send_message(uid, "Chiqildi", reply_markup=kb_main())
 
     elif uid in sessions and sessions[uid].get("ok"):
-        user=sessions[uid]["u"]
+        user = sessions[uid]["u"]
 
-        if d=="keldi":
-            record(user,"Keldi")
-            bot.send_message(uid,"Belgilandi")
+        if data == "keldi":
+            record(user, "Keldi")
+            bot.send_message(uid, "Belgilandi: Keldi")
 
-        elif d=="stat":
-            db=load_attendance()
-            today=get_today()
-            msg="Stat\n"
-            for t in load_teachers():
-                status="yo'q"
-                for r in db.get(today,[]):
-                    if r["user"]==t:
-                        status=r["status"]
-                msg+=f"{t} - {status}\n"
-            bot.send_message(uid,msg)
+        elif data == "ketdi":
+            record(user, "Ketdi")
+            bot.send_message(uid, "Belgilandi: Ketdi")
 
-        elif d=="history":
-            db=load_attendance()
-            msg=""
-            for d in db:
-                msg+=d+"\n"
-                for r in db[d]:
-                    msg+=f"{r['user']} {r['status']} {r['time']}\n"
-            bot.send_message(uid,msg)
+        elif data == "uzrli":
+            record(user, "Uzrli")
+            bot.send_message(uid, "Belgilandi: Uzrli")
+
+        elif data == "stat":
+            db = load_attendance()
+            today = get_today()
+            status_map = build_daily_status_map(db.get(today, []))
+
+            lines = [f"Statistika ({today})"]
+            for teacher in load_teachers().keys():
+                status = status_map.get(teacher, "Belgilanmagan")
+                if status == "Keldi":
+                    icon = "🟢"
+                elif status == "Ketdi":
+                    icon = "🔵"
+                elif status == "Uzrli":
+                    icon = "🟡"
+                else:
+                    icon = "⚫"
+                lines.append(f"{icon} {teacher} — {status}")
+
+            bot.send_message(uid, "\n".join(lines))
+
+        elif data == "history":
+            db = load_attendance()
+            if not db:
+                bot.send_message(uid, "Tarix bo‘sh")
+                return
+
+            lines = ["Tarix"]
+            for date_key in sorted(db.keys(), reverse=True):
+                lines.append(f"\n📅 {date_key}")
+                for row in db[date_key]:
+                    lines.append(f"{row['user']} | {row['status']} | {row['time']}")
+
+            bot.send_message(uid, "\n".join(lines))
+
 
 # ===== LOGIN =====
-@bot.message_handler(func=lambda m:True)
-def login(m):
-    uid=m.chat.id
-    if uid not in sessions: return
+@bot.message_handler(func=lambda message: True)
+def login(message):
+    uid = message.chat.id
+    if uid not in sessions:
+        return
 
-    if sessions[uid]["step"]=="u":
-        sessions[uid]["u"]=m.text
-        sessions[uid]["step"]="p"
-        bot.send_message(uid,"Parol")
+    if sessions[uid]["step"] == "u":
+        sessions[uid]["u"] = message.text
+        sessions[uid]["step"] = "p"
+        bot.send_message(uid, "Parol")
 
-    elif sessions[uid]["step"]=="p":
-        t=load_teachers()
-        if t.get(sessions[uid]["u"])==hash_password(m.text):
-            sessions[uid]["ok"]=True
-            bot.send_message(uid,"Kabinet",reply_markup=kb_panel())
+    elif sessions[uid]["step"] == "p":
+        teachers = load_teachers()
+        if teachers.get(sessions[uid]["u"]) == hash_password(message.text):
+            sessions[uid]["ok"] = True
+            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
         else:
-            bot.send_message(uid,"Xato")
+            bot.send_message(uid, "Xato")
+
+
+# Ensure required teachers are present at startup.
+load_teachers()
 
 print("ISHGA TUSHDI")
 bot.infinity_polling()
