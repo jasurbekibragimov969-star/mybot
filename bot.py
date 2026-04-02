@@ -299,9 +299,9 @@ def cb(call):
 
 
     elif data == "news":
-        news = load_news()
+    news = load_news()
 
-        if not news:
+    if not news:
         bot.send_message(uid, "Hozircha yangilik yo‘q")
         return
 
