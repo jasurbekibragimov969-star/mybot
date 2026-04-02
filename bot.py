@@ -335,5 +335,6 @@ def set_webhook():
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
     return "Webhook set"
-
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
 
