@@ -297,19 +297,18 @@ def cb(call):
     elif data == "contact":
         bot.send_message(uid, "@zkurtuve")
 
-
     elif data == "news":
-    news = load_news()
+        news = load_news()
 
-    if not news:
-        bot.send_message(uid, "Hozircha yangilik yo‘q")
-        return
+        if not news:
+            bot.send_message(uid, "Hozircha yangilik yo‘q")
+            return
 
-    text = "📰 Yangiliklar:\n\n"
-    for item in news[-5:][::-1]:
-        text += f"• {item}\n\n"
+        text = "📰 Yangiliklar:\n\n"
+        for item in news[-5:][::-1]:
+            text += f"• {item}\n\n"
 
-    bot.send_message(uid, text)
+        bot.send_message(uid, text)
 
     elif data == "login":
         sessions[uid] = {"step": "u"}
