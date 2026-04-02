@@ -56,6 +56,17 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+def load_news():
+    if not os.path.exists("news.json"):
+        return []
+    with open("news.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_news(data):
+    with open("news.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 def load_teachers():
     teachers = {}
     if os.path.exists("teachers.json"):
@@ -142,12 +153,54 @@ def admin():
 @app.route("/dashboard")
 def dashboard():
     db = load_attendance()
-    html = "<h1>Davomat✅</h1><a href='/add'>➕ O‘qituvchi qo‘shish</a><br><br>"
+    teachers = load_teachers()
+
+    html = """
+    <html>
+    <head>
+    <title>Davomat</title>
+    <style>
+        body {font-family: Arial; background: #0f172a; color: white;}
+        h1 {text-align: center;}
+        .card {background: #1e293b; padding: 15px; margin: 10px; border-radius: 10px;}
+        .green {color: #22c55e;}
+        .blue {color: #3b82f6;}
+        .yellow {color: #eab308;}
+        .gray {color: #9ca3af;}
+    </style>
+    </head>
+    <body>
+    <h1>📊 Davomat Dashboard</h1>
+    """
 
     for date_key in sorted(db.keys(), reverse=True):
-        html += f"<h3>{date_key}</h3>"
-        for row in db[date_key]:
-            html += f"{row['user']} | {row['status']} | {row['time']}<br>"
+        html += f"<div class='card'><h3>📅 {date_key}</h3>"
+
+        day_data = db.get(date_key, {})
+
+        for teacher in teachers.keys():
+            info = day_data.get(teacher)
+
+            if info:
+                status = info["status"]
+                time = info["time"]
+
+                if status == "Keldi":
+                    cls = "green"
+                elif status == "Ketdi":
+                    cls = "blue"
+                elif status == "Uzrli":
+                    cls = "yellow"
+                else:
+                    cls = "gray"
+
+                html += f"<p class='{cls}'>{teacher} — {status} ({time})</p>"
+            else:
+                html += f"<p class='gray'>{teacher} — Belgilanmagan</p>"
+
+        html += "</div>"
+
+    html += "</body></html>"
     return html
 
 
@@ -176,6 +229,7 @@ def kb_main():
     kb.add(InlineKeyboardButton("📚 Sinflar", callback_data="classes"))
     kb.add(InlineKeyboardButton("👨‍🏫 O'qituvchilar", callback_data="teachers"))
     kb.add(InlineKeyboardButton("🔐 Kabinet", callback_data="login"))
+    kb.add(InlineKeyboardButton("📰 Yangiliklar", callback_data="news"))
     kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
     return kb
 
@@ -242,6 +296,20 @@ def cb(call):
 
     elif data == "contact":
         bot.send_message(uid, "@zkurtuve")
+
+
+    elif data == "news":
+        news = load_news()
+
+        if not news:
+        bot.send_message(uid, "Hozircha yangilik yo‘q")
+        return
+
+    text = "📰 Yangiliklar:\n\n"
+    for item in news[-5:][::-1]:
+        text += f"• {item}\n\n"
+
+    bot.send_message(uid, text)
 
     elif data == "login":
         sessions[uid] = {"step": "u"}
