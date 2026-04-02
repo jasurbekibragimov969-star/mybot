@@ -267,62 +267,62 @@ def cb(call):
             bot.send_message(uid, "Belgilandi: Uzrli👌")
 
         elif data == "stat":
-    db = load_attendance()
-    today = get_today()
+            db = load_attendance()
+            today = get_today()
 
-    teachers = load_teachers()
-    today_data = db.get(today, {})
+            teachers = load_teachers()
+            today_data = db.get(today, {})
 
-    lines = [f"Statistika ({today})"]
+            lines = [f"Statistika ({today})"]
 
-    for teacher in teachers.keys():
-        info = today_data.get(teacher)
+            for teacher in teachers.keys():
+                info = today_data.get(teacher)
 
-        if info:
-            status = info["status"]
-            time = info["time"]
+                if info:
+                    status = info["status"]
+                    time = info["time"]
 
-            if status == "Keldi":
-                icon = "🟢"
-            elif status == "Ketdi":
-                icon = "🔵"
-            elif status == "Uzrli":
-                icon = "🟡"
-            else:
-                icon = "⚫"
+                    if status == "Keldi":
+                        icon = "🟢"
+                    elif status == "Ketdi":
+                        icon = "🔵"
+                    elif status == "Uzrli":
+                        icon = "🟡"
+                    else:
+                        icon = "⚫"
 
-            lines.append(f"{icon} {teacher} — {status} ({time})")
+                    lines.append(f"{icon} {teacher} — {status} ({time})")
 
-        else:
-            lines.append(f"⚫ {teacher} — Belgilanmagan😠")
+                else:
+                    lines.append(f"⚫ {teacher} — Belgilanmagan😠")
 
-    bot.send_message(uid, "\n".join(lines))
+            bot.send_message(uid, "\n".join(lines))
 
-elif data == "history":
-    db = load_attendance()
-    teachers = load_teachers()
 
-    if not db:
-        bot.send_message(uid, "Tarix bo‘sh")
-        return
+        elif data == "history":
+            db = load_attendance()
+            teachers = load_teachers()
 
-    lines = ["Keldi ketdi tarixi"]
+            if not db:
+                bot.send_message(uid, "Tarix bo‘sh")
+                return
 
-    for date_key in sorted(db.keys(), reverse=True):
-        lines.append(f"\n📅 {date_key}")
+            lines = ["Keldi ketdi tarixi"]
 
-        day_data = db.get(date_key, {})
+            for date_key in sorted(db.keys(), reverse=True):
+                lines.append(f"\n📅 {date_key}")
 
-        for teacher in teachers.keys():
-            info = day_data.get(teacher)
+                day_data = db.get(date_key, {})
 
-            if info:
-                lines.append(f"{teacher} — {info['status']} ({info['time']})")
-            else:
-                lines.append(f"{teacher} — Belgilanmagan")
+                for teacher in teachers.keys():
+                    info = day_data.get(teacher)
 
-    bot.send_message(uid, "\n".join(lines))
+                    if info:
+                        lines.append(f"{teacher} — {info['status']} ({info['time']})")
+                    else:
+                        lines.append(f"{teacher} — Belgilanmagan")
 
+            bot.send_message(uid, "\n".join(lines))
 
 # ===== LOGIN =====
 @bot.message_handler(func=lambda message: True)
