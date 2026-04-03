@@ -22,8 +22,6 @@ TEACHER_CREDENTIALS = {
     "sharofiddin_ahmedov": "sharofiddin321",
     "nafisa_akkulova": "nafisa654",
     "rano_aliyeva": "rano111",
-    "feruza_alloberdiyeva": "feruza222",
-    "gulpari_asrayeva": "gulpari333",
     "orzugul_bekmuradova": "orzugul444",
     "maftuna_egamberdiyeva": "maftuna555",
     "nargiz_hakimova": "nargiz666",
@@ -42,6 +40,8 @@ TEACHER_CREDENTIALS = {
     "muslim_turgunbayev": "muslim654",
     "gulnoza_xalmanova": "gulnoza741",
     "olmasoy_shabazova": "olmasoy852",
+    "feruza_alloberdiyeva": "feruza222",
+    "gulpari_asrayeva": "gulpari333",
     "jaxongir_isroilov": "jaxongir963",
 }
 
@@ -55,6 +55,17 @@ sessions = {}
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+def load_classes():
+    if not os.path.exists("classes.json"):
+        return {}
+    with open("classes.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_teacher_info():
+    if not os.path.exists("teacher_info.json"):
+        return {}
+    with open("teacher_info.json", "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def load_news():
     if not os.path.exists("news.json"):
@@ -86,6 +97,11 @@ def load_teachers():
 
     return teachers
 
+def load_school():
+    if not os.path.exists("school.json"):
+        return {}
+    with open("school.json", "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def load_attendance():
     if not os.path.exists("att.json"):
@@ -278,24 +294,32 @@ def cb(call):
     if data == "back":
         bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
 
+    elif data.startswith("c_"):
+        cname = data[2:]
+        classes = load_classes()
+        info = classes.get(cname, "Ma’lumot yo‘q")
+
+        bot.send_message(uid, f"{cname}\n{info}")
+
     elif data == "school":
-        bot.send_message(uid, "Olmaliq shaxar 10-umumiy o'rta ta'lim maktabi🏫\nMaktab online bot tizimi👨‍💻\nMaktab tizimi online tarzda davomat haqida ma'lumot beradi😊\n*** *** ***\nBugun maktabda o‘rganilgan bilim\nertangi muvaffaqiyat kalitidir")
+        school = load_school()
+        bot.send_message(uid, school.get("info", "Ma’lumot yo‘q"))
 
     elif data == "classes":
         bot.send_message(uid, "Sinflar", reply_markup=kb_classes())
-
-    elif data.startswith("c_"):
-        bot.send_message(uid, "O‘quvchi soni: ...\nSinf rahbari: ...")
 
     elif data == "teachers":
         bot.send_message(uid, "O‘qituvchilar", reply_markup=kb_teachers())
 
     elif data.startswith("t_"):
         name = data[2:]
-        bot.send_message(uid, f"{name}\nFan: ...\nToifa: ...\nAloqa: ...")
+        data_info = load_teacher_info()
+        info = data_info.get(name, "Ma’lumot yo‘q")
+
+        bot.send_message(uid, f"{name}\n{info}")
 
     elif data == "contact":
-        bot.send_message(uid, "@zkurtuve")
+        bot.send_message(uid, "Muammo yuz bersa 👉 @zkurtuve")
 
     elif data == "news":
         news = load_news()
@@ -409,7 +433,7 @@ def login(message):
             sessions[uid]["ok"] = True
             bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
         else:
-            bot.send_message(uid, "Xato🤗")
+            bot.send_message(uid, "Kiritilgan ma'lumot nato'g'ri😔")
 
 
 # Ensure required teachers are present at startup.
