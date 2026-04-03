@@ -246,12 +246,7 @@ def add_news():
         return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
-    <form method="post">
-    <textarea name="text"></textarea><br>
-    <button>Qoshish</button>
-    </form>
-    '''
-
+   
 @app.route("/add_school", methods=["GET", "POST"])
 def add_school():
     if request.method == "POST":
