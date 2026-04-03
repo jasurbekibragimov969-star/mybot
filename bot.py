@@ -309,7 +309,6 @@ def kb_classes():
     kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
     return kb
 
-
 def kb_teachers():
     kb = InlineKeyboardMarkup()
     for teacher in load_teachers().keys():
