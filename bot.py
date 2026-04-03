@@ -55,17 +55,20 @@ sessions = {}
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+
 def load_classes():
     if not os.path.exists("classes.json"):
         return {}
     with open("classes.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def load_teacher_info():
     if not os.path.exists("teacher_info.json"):
         return {}
     with open("teacher_info.json", "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def load_news():
     if not os.path.exists("news.json"):
@@ -77,6 +80,7 @@ def load_news():
 def save_news(data):
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 def load_teachers():
     teachers = {}
@@ -97,11 +101,13 @@ def load_teachers():
 
     return teachers
 
+
 def load_school():
     if not os.path.exists("school.json"):
         return {}
     with open("school.json", "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def load_attendance():
     if not os.path.exists("att.json"):
@@ -131,10 +137,11 @@ def record(user, status):
 
     db[today][user] = {
         "status": status,
-        "time": get_time()
+        "time": get_time(),
     }
 
     save_attendance(db)
+
 
 def build_daily_status_map(records):
     status_map = {}
@@ -147,6 +154,7 @@ def build_daily_status_map(records):
 @app.route("/")
 def home():
     return "Bot ishlayapti"
+
 
 @app.route("/add", methods=["GET", "POST"])
 def add():
@@ -164,6 +172,7 @@ def add():
     <button>Qoshish</button>
     </form>
     '''
+
 
 @app.route("/dashboard")
 def dashboard():
@@ -225,7 +234,8 @@ def dashboard():
 
     html += "</body></html>"
     return html
-   
+
+
 @app.route("/add_news", methods=["GET", "POST"])
 def add_news():
     if request.method == "POST":
@@ -235,7 +245,13 @@ def add_news():
         return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
-   
+    <form method="post">
+    <textarea name="text"></textarea><br>
+    <button>Qoshish</button>
+    </form>
+    '''
+
+
 @app.route("/add_school", methods=["GET", "POST"])
 def add_school():
     if request.method == "POST":
@@ -251,6 +267,7 @@ def add_school():
     </form>
     '''
 
+
 @app.route("/add_teacher_info", methods=["GET", "POST"])
 def add_teacher_info():
     if request.method == "POST":
@@ -261,6 +278,17 @@ def add_teacher_info():
             json.dump(data, f, ensure_ascii=False, indent=2)
 
         return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+
+    return '''
+    <form method="post">
+    O'qituvchi username:<br>
+    <input name="name"><br>
+    Info:<br>
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
+
 
 @app.route("/add_class", methods=["GET", "POST"])
 def add_class():
@@ -283,11 +311,6 @@ def add_class():
     </form>
     '''
 
-    <form method="post">
-    <input name="u"><br>
-    <input name="p"><br>
-    <button>Qoshish</button>
-    </form>
 
 # ===== KEYBOARD =====
 def kb_main():
@@ -308,6 +331,7 @@ def kb_classes():
         kb.add(InlineKeyboardButton(c_name.upper(), callback_data="c_" + c_name))
     kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
     return kb
+
 
 def kb_teachers():
     kb = InlineKeyboardMarkup()
@@ -439,7 +463,6 @@ def cb(call):
 
             bot.send_message(uid, "\n".join(lines))
 
-
         elif data == "history":
             db = load_attendance()
             teachers = load_teachers()
@@ -464,6 +487,7 @@ def cb(call):
                         lines.append(f"{teacher} — Belgilanmagan")
 
             bot.send_message(uid, "\n".join(lines))
+
 
 # ===== LOGIN =====
 @bot.message_handler(func=lambda message: True)
@@ -491,6 +515,7 @@ load_teachers()
 
 WEBHOOK_URL = "https://mybot-4k74.onrender.com"
 
+
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     json_str = request.get_data().decode("UTF-8")
@@ -504,5 +529,7 @@ def set_webhook():
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
     return "Webhook set"
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
