@@ -309,8 +309,6 @@ def add_class():
     <input name="p"><br>
     <button>Qoshish</button>
     </form>
-    '''
-
 
 # ===== KEYBOARD =====
 def kb_main():
