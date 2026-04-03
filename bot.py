@@ -157,6 +157,8 @@ def admin():
         return "Login xato"
 
     return '''
+
+
     <h2>Admin Login</h2>
     <form method="post">
     <input name="u"><br><br>
@@ -187,6 +189,14 @@ def dashboard():
     </head>
     <body>
     <h1>📊 Davomat Dashboard</h1>
+
+    <!-- 🔥 SHU YERGA QO‘SHASAN 🔥 -->
+    <div style='text-align:center; margin-bottom:20px;'>
+    <a href='/add_news'>📰 Yangilik qo‘shish</a> |
+    <a href='/add_school'>🏫 Maktab info</a> |
+    <a href='/add_teacher_info'>👨‍🏫 Teacher info</a> |
+    <a href='/add_class'>📚 Sinf info</a>
+    </div>
     """
 
     for date_key in sorted(db.keys(), reverse=True):
@@ -230,6 +240,78 @@ def add():
         return "Qo‘shildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
+@app.route("/add_news", methods=["GET", "POST"])
+def add_news():
+    if request.method == "POST":
+        news = load_news()
+        news.append(request.form.get("text"))
+        save_news(news)
+        return "Qo‘shildi <a href='/dashboard'>Orqaga</a>"
+
+    return '''
+    <form method="post">
+    <textarea name="text"></textarea><br>
+    <button>Qo‘shish</button>
+    </form>
+    '''
+
+@app.route("/add_school", methods=["GET", "POST"])
+def add_school():
+    if request.method == "POST":
+        data = {"info": request.form.get("text")}
+        with open("school.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+
+    return '''
+    <form method="post">
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
+
+@app.route("/add_teacher_info", methods=["GET", "POST"])
+def add_teacher_info():
+    if request.method == "POST":
+        data = load_teacher_info()
+        data[request.form.get("name")] = request.form.get("text")
+
+        with open("teacher_info.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+
+    return '''
+    <form method="post">
+    Username:<br>
+    <input name="name"><br>
+    Info:<br>
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
+
+@app.route("/add_class", methods=["GET", "POST"])
+def add_class():
+    if request.method == "POST":
+        data = load_classes()
+        data[request.form.get("name")] = request.form.get("text")
+
+        with open("classes.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+
+    return '''
+    <form method="post">
+    Sinf nomi:<br>
+    <input name="name"><br>
+    Info:<br>
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
+
     <form method="post">
     <input name="u"><br>
     <input name="p"><br>
