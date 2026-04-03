@@ -148,25 +148,22 @@ def build_daily_status_map(records):
 def home():
     return "Bot ishlayapti"
 
-
-@app.route("/admin", methods=["GET", "POST"])
-def admin():
+@app.route("/add", methods=["GET", "POST"])
+def add():
     if request.method == "POST":
-        if request.form.get("u") == ADMIN_USERNAME and request.form.get("p") == ADMIN_PASSWORD:
-            return redirect("/dashboard")
-        return "Login xato"
+        teachers = load_teachers()
+        teachers[request.form.get("u")] = hash_password(request.form.get("p"))
+        with open("teachers.json", "w", encoding="utf-8") as file:
+            json.dump(teachers, file, ensure_ascii=False, indent=2)
+        return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
-
-
-    <h2>Admin Login</h2>
     <form method="post">
-    <input name="u"><br><br>
-    <input name="p" type="password"><br><br>
-    <button>Kirish</button>
+    <input name="u"><br>
+    <input name="p"><br>
+    <button>Qoshish</button>
     </form>
     '''
-
 
 @app.route("/dashboard")
 def dashboard():
