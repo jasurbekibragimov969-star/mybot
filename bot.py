@@ -225,17 +225,6 @@ def dashboard():
 
     html += "</body></html>"
     return html
-
-@app.route("/add", methods=["GET", "POST"])
-def add():
-    if request.method == "POST":
-        teachers = load_teachers()
-        teachers[request.form.get("u")] = hash_password(request.form.get("p"))
-        with open("teachers.json", "w", encoding="utf-8") as file:
-            json.dump(teachers, file, ensure_ascii=False, indent=2)
-        return "Qoshildi <a href='/dashboard'>Orqaga</a>"
-
-    return '''
    
 @app.route("/add_news", methods=["GET", "POST"])
 def add_news():
@@ -272,16 +261,6 @@ def add_teacher_info():
             json.dump(data, f, ensure_ascii=False, indent=2)
 
         return "Saqlandi <a href='/dashboard'>Orqaga</a>"
-
-    return '''
-    <form method="post">
-    Username:<br>
-    <input name="name"><br>
-    Info:<br>
-    <textarea name="text"></textarea><br>
-    <button>Saqlash</button>
-    </form>
-    '''
 
 @app.route("/add_class", methods=["GET", "POST"])
 def add_class():
