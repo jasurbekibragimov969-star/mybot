@@ -239,12 +239,7 @@ def add():
         return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
-    <form method="post">
-    <input name="u"><br>
-    <input name="p"><br>
-    <button>Qoshish</button>
-    </form>
-    '''
+   
 @app.route("/add_news", methods=["GET", "POST"])
 def add_news():
     if request.method == "POST":
@@ -320,7 +315,7 @@ def add_class():
     <form method="post">
     <input name="u"><br>
     <input name="p"><br>
-    <button>Qo‘shish</button>
+    <button>Qoshish</button>
     </form>
     '''
 
