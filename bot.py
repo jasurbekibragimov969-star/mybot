@@ -235,6 +235,11 @@ def add_news():
         return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
     return '''
+    <form method="post">
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
    
 @app.route("/add_school", methods=["GET", "POST"])
 def add_school():
@@ -261,6 +266,15 @@ def add_teacher_info():
             json.dump(data, f, ensure_ascii=False, indent=2)
 
         return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+    return '''
+    <form method="post">
+    O‘qituvchi username:<br>
+    <input name="name"><br>
+    Info:<br>
+    <textarea name="text"></textarea><br>
+    <button>Saqlash</button>
+    </form>
+    '''
 
 @app.route("/add_class", methods=["GET", "POST"])
 def add_class():
@@ -282,12 +296,6 @@ def add_class():
     <button>Saqlash</button>
     </form>
     '''
-
-    <form method="post">
-    <input name="u"><br>
-    <input name="p"><br>
-    <button>Qoshish</button>
-    </form>
 
 # ===== KEYBOARD =====
 def kb_main():
