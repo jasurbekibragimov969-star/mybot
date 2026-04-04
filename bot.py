@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 import threading
 from flask import Flask, request, redirect
 from datetime import datetime, timedelta
@@ -10,6 +10,12 @@ import hashlib
 # CONFIG
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 TZ_OFFSET = 5
+SCHOOL_POLYGON = [
+    (40.855905, 69.629203),
+    (40.855461, 69.629444),
+    (40.855826, 69.631161),
+    (40.856281, 69.630919),
+]
 
 # WEB ADMIN LOGIN
 ADMIN_USERNAME = "maktab10"
@@ -148,6 +154,29 @@ def build_daily_status_map(records):
     for item in records:
         status_map[item["user"]] = item["status"]
     return status_map
+
+
+def is_inside_polygon(lat, lon, polygon):
+    x = lon
+    y = lat
+    inside = False
+    n = len(polygon)
+    p1x, p1y = polygon[0][1], polygon[0][0]
+
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n][1], polygon[i % n][0]
+
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= xinters:
+                        inside = not inside
+
+        p1x, p1y = p2x, p2y
+
+    return inside
 
 
 # ===== WEB =====
@@ -377,6 +406,12 @@ def kb_panel():
     return kb
 
 
+def kb_location_request():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton("📍 Send Location", request_location=True))
+    return kb
+
+
 # ===== START =====
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -451,8 +486,8 @@ def cb(call):
         user = sessions[uid]["u"]
 
         if data == "keldi":
-            record(user, "Keldi")
-            bot.send_message(uid, "Belgilandi: Keldi👏")
+            sessions[uid]["step"] = "location"
+            bot.send_message(uid, "Iltimos, lokatsiyangizni yuboring.", reply_markup=kb_location_request())
 
         elif data == "ketdi":
             record(user, "Ketdi")
@@ -518,6 +553,32 @@ def cb(call):
                         lines.append(f"{teacher} — Belgilanmagan")
 
             bot.send_message(uid, "\n".join(lines))
+
+
+# ===== LOCATION =====
+@bot.message_handler(content_types=['location'])
+def handle_location(message):
+    uid = message.chat.id
+    if uid not in sessions:
+        return
+    if not sessions[uid].get("ok"):
+        return
+    if sessions[uid].get("step") != "location":
+        return
+
+    lat = message.location.latitude
+    lon = message.location.longitude
+    user = sessions[uid]["u"]
+
+    if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
+        record(user, "Keldi")
+        bot.send_message(uid, "Belgilandi: Keldi👏", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+    else:
+        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+
+    sessions[uid].pop("step", None)
 
 
 # ===== LOGIN =====
