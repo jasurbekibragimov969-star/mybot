@@ -178,6 +178,7 @@ def add():
 def dashboard():
     db = load_attendance()
     teachers = load_teachers()
+    news = load_news()
 
     html = """
     <html>
@@ -191,12 +192,12 @@ def dashboard():
         .blue {color: #3b82f6;}
         .yellow {color: #eab308;}
         .gray {color: #9ca3af;}
+        a {color: #93c5fd;}
     </style>
     </head>
     <body>
     <h1>📊 Davomat Dashboard</h1>
 
-    <!-- 🔥 SHU YERGA QO‘SHASAN 🔥 -->
     <div style='text-align:center; margin-bottom:20px;'>
     <a href='/add_news'>📰 Yangilik qo‘shish</a> |
     <a href='/add_school'>🏫 Maktab info</a> |
@@ -204,6 +205,21 @@ def dashboard():
     <a href='/add_class'>📚 Sinf info</a>
     </div>
     """
+
+    html += "<div class='card'><h3>📰 Yangiliklar</h3>"
+    if news:
+        for index, item in enumerate(news):
+            if isinstance(item, dict):
+                text = item.get("text", "")
+                image = item.get("image")
+            else:
+                text = str(item)
+                image = None
+            image_text = "🖼️ bor" if image else "🖼️ yo‘q"
+            html += f"<p>{index}. {text} ({image_text}) - <a href='/delete_news/{index}'>❌ Delete</a></p>"
+    else:
+        html += "<p class='gray'>Yangilik yo‘q</p>"
+    html += "</div>"
 
     for date_key in sorted(db.keys(), reverse=True):
         html += f"<div class='card'><h3>📅 {date_key}</h3>"
@@ -240,7 +256,7 @@ def dashboard():
 def add_news():
     if request.method == "POST":
         news = load_news()
-        news.append(request.form.get("text"))
+        news.append({"text": request.form.get("text", ""), "image": None})
         save_news(news)
         return "Qoshildi <a href='/dashboard'>Orqaga</a>"
 
@@ -250,6 +266,15 @@ def add_news():
     <button>Qoshish</button>
     </form>
     '''
+
+
+@app.route("/delete_news/<int:index>")
+def delete_news(index):
+    news = load_news()
+    if 0 <= index < len(news):
+        news.pop(index)
+        save_news(news)
+    return redirect("/dashboard")
 
 
 @app.route("/add_school", methods=["GET", "POST"])
@@ -402,11 +427,17 @@ def cb(call):
             bot.send_message(uid, "Hozircha yangilik yo‘q")
             return
 
-        text = "📰 Yangiliklar:\n\n"
+        bot.send_message(uid, "📰 Yangiliklar:")
         for item in news[-5:][::-1]:
-            text += f"• {item}\n\n"
-
-        bot.send_message(uid, text)
+            if isinstance(item, dict):
+                text = item.get("text", "")
+                image = item.get("image")
+                if image:
+                    bot.send_photo(uid, image, caption=text)
+                else:
+                    bot.send_message(uid, text)
+            else:
+                bot.send_message(uid, str(item))
 
     elif data == "login":
         sessions[uid] = {"step": "u"}
