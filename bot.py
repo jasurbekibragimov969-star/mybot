@@ -1,6 +1,5 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-import threading
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from flask import Flask, request, redirect
 from datetime import datetime, timedelta
 import json
@@ -368,47 +367,53 @@ def add_class():
 
 # ===== KEYBOARD =====
 def kb_main():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🏫 Maktab", callback_data="school"))
-    kb.add(InlineKeyboardButton("📚 Sinflar", callback_data="classes"))
-    kb.add(InlineKeyboardButton("👨‍🏫 O'qituvchilar", callback_data="teachers"))
-    kb.add(InlineKeyboardButton("🔐 Kabinet", callback_data="login"))
-    kb.add(InlineKeyboardButton("📰 Yangiliklar", callback_data="news"))
-    kb.add(InlineKeyboardButton("📩 Murojaat", callback_data="contact"))
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("🏫 Maktab"), KeyboardButton("📚 Sinflar"))
+    kb.row(KeyboardButton("👨‍🏫 O'qituvchilar"), KeyboardButton("📰 Yangiliklar"))
+    kb.row(KeyboardButton("🔐 Kabinet"), KeyboardButton("📩 Murojaat"))
     return kb
 
 
 def kb_classes():
-    kb = InlineKeyboardMarkup(row_width=2)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
     classes = ["1-a", "2-a", "3-a", "3-b", "4-a", "5-a", "6-a", "6-b", "7-a", "8-a", "9-a", "9-b", "10-a", "11-a"]
-    for c_name in classes:
-        kb.add(InlineKeyboardButton(c_name.upper(), callback_data="c_" + c_name))
-    kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
+    for idx in range(0, len(classes), 2):
+        left = KeyboardButton(classes[idx].upper())
+        if idx + 1 < len(classes):
+            right = KeyboardButton(classes[idx + 1].upper())
+            kb.row(left, right)
+        else:
+            kb.row(left)
+    kb.row(KeyboardButton("⬅️ Orqaga"))
     return kb
 
 
 def kb_teachers():
-    kb = InlineKeyboardMarkup()
-    for teacher in load_teachers().keys():
-        kb.add(InlineKeyboardButton(teacher, callback_data="t_" + teacher))
-    kb.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back"))
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    teacher_buttons = list(load_teachers().keys())
+    for idx in range(0, len(teacher_buttons), 2):
+        left = KeyboardButton(teacher_buttons[idx])
+        if idx + 1 < len(teacher_buttons):
+            right = KeyboardButton(teacher_buttons[idx + 1])
+            kb.row(left, right)
+        else:
+            kb.row(left)
+    kb.row(KeyboardButton("⬅️ Orqaga"))
     return kb
 
 
 def kb_panel():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("Keldim👍", callback_data="keldi"))
-    kb.add(InlineKeyboardButton("Ketdim🫡", callback_data="ketdi"))
-    kb.add(InlineKeyboardButton("Uzrli sabab‼️", callback_data="uzrli"))
-    kb.add(InlineKeyboardButton("Statistika📊", callback_data="stat"))
-    kb.add(InlineKeyboardButton("Tarix⌛", callback_data="history"))
-    kb.add(InlineKeyboardButton("⬅️ Chiqish", callback_data="logout"))
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("🟢 Keldim"), KeyboardButton("🔵 Ketdim"))
+    kb.row(KeyboardButton("🟡 Uzrli"), KeyboardButton("📊 Statistika"))
+    kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("⬅️ Chiqish"))
     return kb
 
 
 def kb_location_request():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton("📍 Send Location", request_location=True))
+    kb.row(KeyboardButton("📍 Send Location", request_location=True))
+    kb.row(KeyboardButton("⬅️ Orqaga"))
     return kb
 
 
@@ -419,85 +424,135 @@ def start(message):
     bot.send_message(message.chat.id, "🏫 Tizim", reply_markup=kb_main())
 
 
-# ===== CALLBACK =====
-@bot.callback_query_handler(func=lambda c: True)
-def cb(call):
-    uid = call.message.chat.id
-    data = call.data
+# ===== LOCATION =====
+@bot.message_handler(content_types=["location"])
+def handle_location(message):
+    uid = message.chat.id
+    if uid not in sessions:
+        return
+    if not sessions[uid].get("ok"):
+        return
+    if sessions[uid].get("step") != "location":
+        return
 
-    if data == "back":
-        bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
+    lat = message.location.latitude
+    lon = message.location.longitude
+    user = sessions[uid]["u"]
 
-    elif data.startswith("c_"):
-        cname = data[2:]
-        classes = load_classes()
-        info = classes.get(cname, "Ma’lumot yo‘q")
+    if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
+        record(user, "Keldi")
+        bot.send_message(uid, "Belgilandi: Keldi👏", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+    else:
+        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
 
-        bot.send_message(uid, f"{cname}\n{info}")
+    sessions[uid].pop("step", None)
 
-    elif data == "school":
+
+# ===== TEXT ROUTER =====
+@bot.message_handler(content_types=["text"])
+def text_router(message):
+    uid = message.chat.id
+    text = (message.text or "").strip()
+
+    if uid in sessions and sessions[uid].get("step") == "u":
+        sessions[uid]["u"] = text
+        sessions[uid]["step"] = "p"
+        bot.send_message(uid, "Parol🧐")
+        return
+
+    if uid in sessions and sessions[uid].get("step") == "p":
+        teachers = load_teachers()
+        if teachers.get(sessions[uid]["u"]) == hash_password(text):
+            sessions[uid]["ok"] = True
+            sessions[uid].pop("step", None)
+            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+        else:
+            bot.send_message(uid, "Kiritilgan ma'lumot nato'g'ri😔")
+        return
+
+    if text == "⬅️ Orqaga":
+        if uid in sessions and sessions[uid].get("ok") and sessions[uid].get("step") == "location":
+            sessions[uid].pop("step", None)
+            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+        else:
+            bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
+        return
+
+    if text == "🏫 Maktab":
         school = load_school()
-        bot.send_message(uid, school.get("info", "Ma’lumot yo‘q"))
+        bot.send_message(uid, school.get("info", "Ma’lumot yo‘q"), reply_markup=kb_main())
+        return
 
-    elif data == "classes":
-        bot.send_message(uid, "Sinflar", reply_markup=kb_classes())
+    if text == "📚 Sinflar":
+        bot.send_message(uid, "📚 Sinflar", reply_markup=kb_classes())
+        return
 
-    elif data == "teachers":
-        bot.send_message(uid, "O‘qituvchilar", reply_markup=kb_teachers())
+    classes = load_classes()
+    class_key = text.lower()
+    if class_key in classes:
+        bot.send_message(uid, f"{class_key}\n{classes.get(class_key, 'Ma’lumot yo‘q')}", reply_markup=kb_classes())
+        return
 
-    elif data.startswith("t_"):
-        name = data[2:]
+    if text == "👨‍🏫 O'qituvchilar":
+        bot.send_message(uid, "👨‍🏫 O‘qituvchilar", reply_markup=kb_teachers())
+        return
+
+    if text in load_teachers().keys():
         data_info = load_teacher_info()
-        info = data_info.get(name, "Ma’lumot yo‘q")
+        info = data_info.get(text, "Ma’lumot yo‘q")
+        bot.send_message(uid, f"{text}\n{info}", reply_markup=kb_teachers())
+        return
 
-        bot.send_message(uid, f"{name}\n{info}")
+    if text == "📩 Murojaat":
+        bot.send_message(uid, "Muammo yuz bersa 👉 @zkurtuve", reply_markup=kb_main())
+        return
 
-    elif data == "contact":
-        bot.send_message(uid, "Muammo yuz bersa 👉 @zkurtuve")
-
-    elif data == "news":
+    if text == "📰 Yangiliklar":
         news = load_news()
 
         if not news:
-            bot.send_message(uid, "Hozircha yangilik yo‘q")
+            bot.send_message(uid, "Hozircha yangilik yo‘q", reply_markup=kb_main())
             return
 
-        bot.send_message(uid, "📰 Yangiliklar:")
+        bot.send_message(uid, "📰 Yangiliklar:", reply_markup=kb_main())
         for item in news[-5:][::-1]:
             if isinstance(item, dict):
-                text = item.get("text", "")
+                text_value = item.get("text", "")
                 image = item.get("image")
                 if image:
-                    bot.send_photo(uid, image, caption=text)
+                    bot.send_photo(uid, image, caption=text_value)
                 else:
-                    bot.send_message(uid, text)
+                    bot.send_message(uid, text_value)
             else:
                 bot.send_message(uid, str(item))
+        return
 
-    elif data == "login":
+    if text == "🔐 Kabinet":
         sessions[uid] = {"step": "u"}
         bot.send_message(uid, "Username")
+        return
 
-    elif data == "logout":
-        sessions.pop(uid, None)
-        bot.send_message(uid, "Chiqildi🫡", reply_markup=kb_main())
-
-    elif uid in sessions and sessions[uid].get("ok"):
+    if uid in sessions and sessions[uid].get("ok"):
         user = sessions[uid]["u"]
 
-        if data == "keldi":
+        if text == "🟢 Keldim":
             sessions[uid]["step"] = "location"
             bot.send_message(uid, "Iltimos, lokatsiyangizni yuboring.", reply_markup=kb_location_request())
+            return
 
-        elif data == "ketdi":
+        if text == "🔵 Ketdim":
             record(user, "Ketdi")
-            bot.send_message(uid, "Belgilandi: Ketdi🤝")
+            bot.send_message(uid, "Belgilandi: Ketdi🤝", reply_markup=kb_panel())
+            return
 
-        elif data == "uzrli":
+        if text == "🟡 Uzrli":
             record(user, "Uzrli")
-            bot.send_message(uid, "Belgilandi: Uzrli👌")
+            bot.send_message(uid, "Belgilandi: Uzrli👌", reply_markup=kb_panel())
+            return
 
-        elif data == "stat":
+        if text == "📊 Statistika":
             db = load_attendance()
             today = get_today()
 
@@ -527,14 +582,15 @@ def cb(call):
                 else:
                     lines.append(f"⚫ {teacher} — Belgilanmagan😠")
 
-            bot.send_message(uid, "\n".join(lines))
+            bot.send_message(uid, "\n".join(lines), reply_markup=kb_panel())
+            return
 
-        elif data == "history":
+        if text == "📜 Tarix":
             db = load_attendance()
             teachers = load_teachers()
 
             if not db:
-                bot.send_message(uid, "Tarix bo‘sh")
+                bot.send_message(uid, "Tarix bo‘sh", reply_markup=kb_panel())
                 return
 
             lines = ["Keldi ketdi tarixi"]
@@ -552,54 +608,15 @@ def cb(call):
                     else:
                         lines.append(f"{teacher} — Belgilanmagan")
 
-            bot.send_message(uid, "\n".join(lines))
+            bot.send_message(uid, "\n".join(lines), reply_markup=kb_panel())
+            return
 
+        if text == "⬅️ Chiqish":
+            sessions.pop(uid, None)
+            bot.send_message(uid, "Chiqildi🫡", reply_markup=kb_main())
+            return
 
-# ===== LOCATION =====
-@bot.message_handler(content_types=['location'])
-def handle_location(message):
-    uid = message.chat.id
-    if uid not in sessions:
-        return
-    if not sessions[uid].get("ok"):
-        return
-    if sessions[uid].get("step") != "location":
-        return
-
-    lat = message.location.latitude
-    lon = message.location.longitude
-    user = sessions[uid]["u"]
-
-    if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
-        record(user, "Keldi")
-        bot.send_message(uid, "Belgilandi: Keldi👏", reply_markup=ReplyKeyboardRemove())
-        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-    else:
-        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=ReplyKeyboardRemove())
-        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-
-    sessions[uid].pop("step", None)
-
-
-# ===== LOGIN =====
-@bot.message_handler(func=lambda message: True)
-def login(message):
-    uid = message.chat.id
-    if uid not in sessions:
-        return
-
-    if sessions[uid]["step"] == "u":
-        sessions[uid]["u"] = message.text
-        sessions[uid]["step"] = "p"
-        bot.send_message(uid, "Parol🧐")
-
-    elif sessions[uid]["step"] == "p":
-        teachers = load_teachers()
-        if teachers.get(sessions[uid]["u"]) == hash_password(message.text):
-            sessions[uid]["ok"] = True
-            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-        else:
-            bot.send_message(uid, "Kiritilgan ma'lumot nato'g'ri😔")
+    bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
 
 
 # Ensure required teachers are present at startup.
