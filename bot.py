@@ -87,6 +87,24 @@ def save_news(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def load_bindings():
+    if not os.path.exists("user_bindings.json"):
+        return {}
+    try:
+        with open("user_bindings.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
+def save_bindings(data):
+    with open("user_bindings.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def load_teachers():
     teachers = {}
     if os.path.exists("teachers.json"):
@@ -420,8 +438,11 @@ def kb_location_request():
 # ===== START =====
 @bot.message_handler(commands=["start"])
 def start(message):
-    sessions.pop(message.chat.id, None)
-    bot.send_message(message.chat.id, "🏫 Tizim", reply_markup=kb_main())
+    uid = message.chat.id
+    if uid in sessions and sessions[uid].get("ok"):
+        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+        return
+    bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
 
 
 # ===== LOCATION =====
@@ -465,8 +486,25 @@ def text_router(message):
     if uid in sessions and sessions[uid].get("step") == "p":
         teachers = load_teachers()
         if teachers.get(sessions[uid]["u"]) == hash_password(text):
-            sessions[uid]["ok"] = True
-            sessions[uid].pop("step", None)
+            username = sessions[uid]["u"]
+            bindings = load_bindings()
+            bound_chat_id = bindings.get(username)
+
+            if bound_chat_id is None:
+                bindings[username] = uid
+                save_bindings(bindings)
+            else:
+                try:
+                    normalized_bound_chat_id = int(bound_chat_id)
+                except (TypeError, ValueError):
+                    normalized_bound_chat_id = None
+
+                if normalized_bound_chat_id != uid:
+                    bot.send_message(uid, "❌ Bu akkaunt boshqa Telegram qurilmaga bog‘langan")
+                    sessions.pop(uid, None)
+                    return
+
+            sessions[uid] = {"ok": True, "u": username}
             bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
         else:
             bot.send_message(uid, "Kiritilgan ma'lumot nato'g'ri😔")
@@ -530,6 +568,9 @@ def text_router(message):
         return
 
     if text == "🔐 Kabinet":
+        if uid in sessions and sessions[uid].get("ok"):
+            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
+            return
         sessions[uid] = {"step": "u"}
         bot.send_message(uid, "Username")
         return
