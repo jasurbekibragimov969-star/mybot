@@ -1,19 +1,29 @@
+import hashlib
 import json
 import os
-import hashlib
+import threading
+import time
+import zipfile
 from datetime import datetime, timedelta
 from functools import wraps
+from io import BytesIO
+from xml.sax.saxutils import escape
 
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from flask import Flask, request, redirect, session as web_session, url_for
+from flask import Flask, redirect, request, session as web_session, url_for
+from telebot.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-TOKEN = os.getenv("BOT_TOKEN", "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://mybot-4k74.onrender.com")
-ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "0"))
-CONTACT_RECEIVER_ID = 6344661867
+TOKEN = os.getenv("BOT_TOKEN", "")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
+CONTACT_RECEIVER_ID = int(os.getenv("CONTACT_RECEIVER_ID", str(ADMIN_TG_ID)))
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
+START_HOUR = 8
+START_MINUTE = 30
+REMINDER_HOUR = 8
+REMINDER_MINUTE = 0
+MAX_LOCATION_AGE_SECONDS = 120
 
 SCHOOL_POLYGON = [
     (40.855905, 69.629203),
@@ -60,6 +70,8 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "school-secret-key")
 
 sessions = {}
+admin_reply_map = {}
+reminder_state = {"date": None}
 
 
 def hash_password(password: str) -> str:
@@ -104,7 +116,15 @@ def load_school():
 
 
 def load_teacher_info():
-    return load_json("teacher_info.json", {})
+    info = load_json("teacher_info.json", None)
+    if isinstance(info, dict):
+        return info
+    legacy = load_json("tacher_info.json", {})
+    return legacy if isinstance(legacy, dict) else {}
+
+
+def save_teacher_info(data):
+    save_json("teacher_info.json", data)
 
 
 def load_attendance():
@@ -146,16 +166,27 @@ def save_news(data):
     save_json("news.json", prepared)
 
 
+def now_local() -> datetime:
+    return datetime.utcnow() + timedelta(hours=TZ_OFFSET)
+
+
 def get_today():
-    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d")
+    return now_local().strftime("%Y-%m-%d")
 
 
 def get_time():
-    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%H:%M")
+    return now_local().strftime("%H:%M")
 
 
 def current_timestamp():
-    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d %H:%M:%S")
+    return now_local().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def parse_date_safe(date_text):
+    try:
+        return datetime.strptime(date_text, "%Y-%m-%d")
+    except Exception:
+        return None
 
 
 def record_attendance(username, status):
@@ -164,6 +195,11 @@ def record_attendance(username, status):
     db.setdefault(day, {})
     db[day][username] = {"status": status, "time": get_time()}
     save_attendance(db)
+
+
+def has_attendance_for_today(username):
+    db = load_attendance()
+    return username in db.get(get_today(), {})
 
 
 def is_inside_polygon(lat, lon, polygon):
@@ -214,7 +250,8 @@ def kb_cabinet():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("✅ Keldim"), KeyboardButton("🚶 Ketdim"))
     kb.row(KeyboardButton("⚠️ Uzrli"), KeyboardButton("📊 Statistika"))
-    kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("🚪 Chiqish"))
+    kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("📤 Export"))
+    kb.row(KeyboardButton("🚪 Chiqish"))
     return kb
 
 
@@ -243,6 +280,183 @@ def get_teacher_by_label(label):
     for username in load_teachers().keys():
         lookup[format_teacher_label(username)] = username
     return lookup.get(label)
+
+
+def teacher_from_user_id(uid):
+    bindings = load_bindings()
+    for username, tg_id in bindings.items():
+        try:
+            if int(tg_id) == int(uid):
+                return username
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def detect_arrive_status():
+    now = now_local()
+    start = now.replace(hour=START_HOUR, minute=START_MINUTE, second=0, microsecond=0)
+    return "Kechikdi" if now > start else "Keldi"
+
+
+def valid_fresh_location(message):
+    if not getattr(message, "date", None):
+        return False
+    msg_time_utc = datetime.utcfromtimestamp(message.date)
+    age = datetime.utcnow() - msg_time_utc
+    return age.total_seconds() <= MAX_LOCATION_AGE_SECONDS
+
+
+def monthly_statistics_for(username, year, month):
+    db = load_attendance()
+    month_days = []
+    for day in db.keys():
+        dt = parse_date_safe(day)
+        if dt and dt.year == year and dt.month == month:
+            month_days.append(day)
+
+    counts = {"Keldi": 0, "Kechikdi": 0, "Uzrli": 0, "Kelmagan": 0}
+    for day in month_days:
+        status = (db.get(day, {}).get(username) or {}).get("status")
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["Kelmagan"] += 1
+
+    counts["Kelmagan"] += max(len(month_days) - (counts["Keldi"] + counts["Kechikdi"] + counts["Uzrli"]), 0)
+    return counts, sorted(month_days)
+
+
+def all_monthly_statistics(year, month):
+    result = {}
+    for username in load_teachers().keys():
+        result[username] = monthly_statistics_for(username, year, month)[0]
+    return result
+
+
+def build_sheet_xml(rows):
+    xml_rows = []
+    for r_index, row in enumerate(rows, start=1):
+        cells = []
+        for c_index, value in enumerate(row, start=1):
+            col_name = ""
+            n = c_index
+            while n:
+                n, rem = divmod(n - 1, 26)
+                col_name = chr(65 + rem) + col_name
+            ref = f"{col_name}{r_index}"
+            val = escape(str(value if value is not None else ""))
+            cells.append(f'<c r="{ref}" t="inlineStr"><is><t>{val}</t></is></c>')
+        xml_rows.append(f"<row r=\"{r_index}\">{''.join(cells)}</row>")
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<sheetData>{''.join(xml_rows)}</sheetData>"
+        "</worksheet>"
+    )
+
+
+def create_attendance_xlsx():
+    db = load_attendance()
+    rows = [["Sana", "O'qituvchi", "Status", "Vaqt"]]
+    teachers = load_teachers()
+    for day in sorted(db.keys()):
+        day_data = db.get(day, {})
+        for username in teachers.keys():
+            info = day_data.get(username)
+            if info:
+                rows.append([day, format_teacher_label(username), info.get("status", ""), info.get("time", "")])
+            else:
+                rows.append([day, format_teacher_label(username), "Kelmagan", "-"])
+
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '</Types>'
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="xl/workbook.xml"/>'
+        '</Relationships>'
+    )
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Attendance" sheetId="1" r:id="rId1"/></sheets>'
+        '</workbook>'
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+        'Target="worksheets/sheet1.xml"/>'
+        '</Relationships>'
+    )
+
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("xl/workbook.xml", workbook)
+        zf.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        zf.writestr("xl/worksheets/sheet1.xml", build_sheet_xml(rows))
+    stream.seek(0)
+    return stream
+
+
+def send_export_to_admin(requester_id):
+    xlsx_data = create_attendance_xlsx()
+    filename = f"attendance_{get_today()}.xlsx"
+    caption = f"📤 Export so‘rovi: {requester_id}"
+    bot.send_document(CONTACT_RECEIVER_ID, (filename, xlsx_data), caption=caption)
+
+
+def send_reminders():
+    today = get_today()
+    db = load_attendance()
+    day_data = db.get(today, {})
+    bindings = load_bindings()
+
+    for username in load_teachers().keys():
+        if username in day_data:
+            continue
+        uid = bindings.get(username)
+        if uid is None:
+            continue
+        try:
+            bot.send_message(
+                int(uid),
+                "🔔 Eslatma: bugungi davomatni belgilang (✅ Keldim / ⚠️ Uzrli).",
+                reply_markup=kb_cabinet(),
+            )
+        except Exception:
+            continue
+
+
+def reminder_loop():
+    while True:
+        try:
+            now = now_local()
+            date_key = now.strftime("%Y-%m-%d")
+            target = now.replace(hour=REMINDER_HOUR, minute=REMINDER_MINUTE, second=0, microsecond=0)
+            if now >= target and reminder_state.get("date") != date_key:
+                send_reminders()
+                reminder_state["date"] = date_key
+        except Exception:
+            pass
+        time.sleep(30)
 
 
 def login_required(view_func):
@@ -447,7 +661,7 @@ def add_teacher_info():
         if username:
             data = load_teacher_info()
             data[username] = text
-            save_json("teacher_info.json", data)
+            save_teacher_info(data)
         return redirect("/dashboard")
 
     options = "".join([f"<option value='{name}'>{name}</option>" for name in load_teachers().keys()])
@@ -486,6 +700,12 @@ def set_webhook():
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     uid = message.chat.id
+    bound_teacher = teacher_from_user_id(uid)
+    if bound_teacher:
+        sessions[uid] = {"ok": True, "u": bound_teacher}
+        bot.send_message(uid, "🔐 Kabinetingizga xush kelibsiz", reply_markup=kb_cabinet())
+        return
+
     user_session = sessions.get(uid)
     if user_session and user_session.get("ok"):
         bot.send_message(uid, "🔐 Kabinetingizga xush kelibsiz", reply_markup=kb_cabinet())
@@ -500,12 +720,20 @@ def handle_location(message):
     if not user_session or not user_session.get("ok") or user_session.get("step") != "wait_location":
         return
 
+    if not valid_fresh_location(message):
+        bot.send_message(uid, "❌ Lokatsiya juda eski, qayta yuboring.", reply_markup=kb_location_request())
+        return
+
     lat = message.location.latitude
     lon = message.location.longitude
 
     if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
-        record_attendance(user_session["u"], "Keldi")
-        bot.send_message(uid, "✅ Keldi holati qabul qilindi", reply_markup=kb_cabinet())
+        arrive_status = detect_arrive_status()
+        record_attendance(user_session["u"], arrive_status)
+        if arrive_status == "Kechikdi":
+            bot.send_message(uid, "⏰ Kechikdi holati qabul qilindi", reply_markup=kb_cabinet())
+        else:
+            bot.send_message(uid, "✅ Keldi holati qabul qilindi", reply_markup=kb_cabinet())
     else:
         bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=kb_cabinet())
 
@@ -528,23 +756,22 @@ def send_last_news(uid):
             bot.send_message(uid, caption)
 
 
-def send_statistics(uid):
-    db = load_attendance()
-    today = get_today()
-    day_data = db.get(today, {})
-    teachers = load_teachers()
+def send_statistics(uid, username):
+    now = now_local()
+    year, month = now.year, now.month
+    counts, month_days = monthly_statistics_for(username, year, month)
+    month_tag = now.strftime("%Y-%m")
 
-    lines = [f"📊 Bugungi statistika ({today})"]
-    for username in teachers.keys():
-        info = day_data.get(username)
-        if info:
-            status = info.get("status", "-")
-            icon = "✅" if status == "Keldi" else "🚶" if status == "Ketdi" else "⚠️" if status == "Uzrli" else "•"
-            lines.append(f"{icon} {format_teacher_label(username)} — {status} ({info.get('time', '-')})")
-        else:
-            lines.append(f"• {format_teacher_label(username)} — Belgilanmagan")
-
-    bot.send_message(uid, "\n".join(lines), reply_markup=kb_cabinet())
+    text = (
+        f"📊 Oylik statistika ({month_tag})\n"
+        f"👤 {format_teacher_label(username)}\n\n"
+        f"✅ Keldi: {counts['Keldi']}\n"
+        f"⏰ Kechikdi: {counts['Kechikdi']}\n"
+        f"⚠️ Uzrli: {counts['Uzrli']}\n"
+        f"❌ Kelmagan: {counts['Kelmagan']}\n"
+        f"📅 Hisoblangan kunlar: {len(month_days)}"
+    )
+    bot.send_message(uid, text, reply_markup=kb_cabinet())
 
 
 def send_history(uid):
@@ -583,10 +810,33 @@ def forward_contact_to_admin(message):
     )
 
     try:
-        bot.send_message(CONTACT_RECEIVER_ID, payload)
+        sent = bot.send_message(CONTACT_RECEIVER_ID, payload)
+        admin_reply_map[sent.message_id] = user.id
         bot.reply_to(message, "Murojaatingiz yuborildi ✅", reply_markup=kb_main())
     except Exception:
         bot.reply_to(message, "Xabar yuborishda xatolik bo‘ldi", reply_markup=kb_main())
+
+
+def reply_admin_to_user(message):
+    if message.from_user.id != CONTACT_RECEIVER_ID:
+        return False
+    if not message.reply_to_message:
+        return False
+
+    target_user_id = admin_reply_map.get(message.reply_to_message.message_id)
+    if not target_user_id:
+        return False
+
+    reply_text = message.text or ""
+    if not reply_text:
+        return False
+
+    try:
+        bot.send_message(target_user_id, f"📬 Admin javobi:\n{reply_text}")
+        bot.reply_to(message, "✅ Foydalanuvchiga yuborildi")
+    except Exception:
+        bot.reply_to(message, "❌ Yuborilmadi")
+    return True
 
 
 def begin_login(uid):
@@ -599,6 +849,9 @@ def message_router(message):
     uid = message.chat.id
     text = (message.text or "").strip() if message.content_type == "text" else ""
     user_session = sessions.get(uid, {})
+
+    if message.content_type == "text" and reply_admin_to_user(message):
+        return
 
     if user_session.get("step") == "waiting_for_message":
         if message.content_type != "text" or not text:
@@ -668,6 +921,11 @@ def message_router(message):
         if user_session.get("ok"):
             bot.send_message(uid, "🔐 Kabinet", reply_markup=kb_cabinet())
             return
+        auto_teacher = teacher_from_user_id(uid)
+        if auto_teacher:
+            sessions[uid] = {"ok": True, "u": auto_teacher}
+            bot.send_message(uid, "✅ Avtomatik kirish bajarildi", reply_markup=kb_cabinet())
+            return
         begin_login(uid)
         return
 
@@ -690,11 +948,19 @@ def message_router(message):
             return
 
         if text == "📊 Statistika":
-            send_statistics(uid)
+            send_statistics(uid, username)
             return
 
         if text == "📜 Tarix":
             send_history(uid)
+            return
+
+        if text == "📤 Export":
+            try:
+                send_export_to_admin(uid)
+                bot.send_message(uid, "📤 Export admin ga yuborildi", reply_markup=kb_cabinet())
+            except Exception:
+                bot.send_message(uid, "❌ Export yuborishda xatolik", reply_markup=kb_cabinet())
             return
 
         if text == "🚪 Chiqish":
@@ -707,6 +973,8 @@ def message_router(message):
 
 load_teachers()
 load_news()
+
+threading.Thread(target=reminder_loop, daemon=True).start()
 
 
 if __name__ == "__main__":
