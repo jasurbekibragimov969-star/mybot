@@ -12,6 +12,7 @@ from flask import Flask, request, redirect, session as web_session, url_for
 TOKEN = os.getenv("BOT_TOKEN", "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://mybot-4k74.onrender.com")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "0"))
+CONTACT_RECEIVER_ID = 6344661867
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
 
 SCHOOL_POLYGON = [
@@ -570,29 +571,19 @@ def send_history(uid):
 
 
 def forward_contact_to_admin(message):
-    if ADMIN_TG_ID == 0:
-        bot.reply_to(message, "Xabar qabul qilindi ✅", reply_markup=kb_main())
-        return
-
     user = message.from_user
-    header = (
+    full_name = " ".join(part for part in [user.first_name, user.last_name] if part).strip() or "-"
+    username = f"@{user.username}" if user.username else "yo‘q"
+    payload = (
         "📩 Yangi murojaat\n"
-        f"👤 Ism: {user.first_name or '-'} {user.last_name or ''}\n"
-        f"🔗 Username: @{user.username if user.username else 'yo‘q'}\n"
+        f"👤 Ism: {full_name}\n"
+        f"🔗 Username: {username}\n"
         f"🆔 ID: {user.id}\n"
+        f"💬 Xabar: {message.text}"
     )
 
     try:
-        if message.content_type == "text":
-            bot.send_message(ADMIN_TG_ID, f"{header}\n💬 {message.text}")
-        elif message.content_type == "photo":
-            caption = message.caption or ""
-            bot.send_photo(ADMIN_TG_ID, message.photo[-1].file_id, caption=f"{header}\n🖼 {caption}"[:1024])
-        elif message.content_type == "document":
-            cap = message.caption or ""
-            bot.send_document(ADMIN_TG_ID, message.document.file_id, caption=f"{header}\n📎 {cap}"[:1024])
-        else:
-            bot.send_message(ADMIN_TG_ID, f"{header}\nℹ️ Qo‘llab-quvvatlanmagan format: {message.content_type}")
+        bot.send_message(CONTACT_RECEIVER_ID, payload)
         bot.reply_to(message, "Murojaatingiz yuborildi ✅", reply_markup=kb_main())
     except Exception:
         bot.reply_to(message, "Xabar yuborishda xatolik bo‘ldi", reply_markup=kb_main())
@@ -609,7 +600,10 @@ def message_router(message):
     text = (message.text or "").strip() if message.content_type == "text" else ""
     user_session = sessions.get(uid, {})
 
-    if user_session.get("step") == "await_contact_message":
+    if user_session.get("step") == "waiting_for_message":
+        if message.content_type != "text" or not text:
+            bot.send_message(uid, "Faqat matnli xabar yuboring.")
+            return
         forward_contact_to_admin(message)
         user_session.pop("step", None)
         return
@@ -666,8 +660,8 @@ def message_router(message):
         return
 
     if text == "📩 Murojaat":
-        sessions.setdefault(uid, {})["step"] = "await_contact_message"
-        bot.send_message(uid, "Murojaatingizni yuboring. Matn, rasm yoki fayl yuborishingiz mumkin.", reply_markup=ReplyKeyboardRemove())
+        sessions.setdefault(uid, {})["step"] = "waiting_for_message"
+        bot.send_message(uid, "Xabaringizni yozing", reply_markup=ReplyKeyboardRemove())
         return
 
     if text == "🔐 Kabinet":
