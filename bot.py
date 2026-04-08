@@ -1,14 +1,19 @@
-import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from flask import Flask, request, redirect
-from datetime import datetime, timedelta
 import json
 import os
 import hashlib
+from datetime import datetime, timedelta
+from functools import wraps
 
-# CONFIG
-TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
-TZ_OFFSET = 5
+import telebot
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from flask import Flask, request, redirect, session as web_session, url_for
+
+
+TOKEN = os.getenv("BOT_TOKEN", "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://mybot-4k74.onrender.com")
+ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "0"))
+TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
+
 SCHOOL_POLYGON = [
     (40.855905, 69.629203),
     (40.855461, 69.629444),
@@ -16,9 +21,8 @@ SCHOOL_POLYGON = [
     (40.856281, 69.630919),
 ]
 
-# WEB ADMIN LOGIN
-ADMIN_USERNAME = "maktab10"
-ADMIN_PASSWORD = "maktab1010"
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "maktab10")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "maktab1010")
 
 TEACHER_CREDENTIALS = {
     "dilara_abdullayeva": "dilara452",
@@ -52,96 +56,93 @@ TEACHER_CREDENTIALS = {
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "school-secret-key")
 
 sessions = {}
 
 
-# ===== UTILS =====
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def load_classes():
-    if not os.path.exists("classes.json"):
-        return {}
-    with open("classes.json", "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_teacher_info():
-    if not os.path.exists("teacher_info.json"):
-        return {}
-    with open("teacher_info.json", "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_news():
-    if not os.path.exists("news.json"):
-        return []
-    with open("news.json", "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_news(data):
-    with open("news.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def load_bindings():
-    if not os.path.exists("user_bindings.json"):
-        return {}
+def load_json(path, default):
+    if not os.path.exists(path):
+        return default
     try:
-        with open("user_bindings.json", "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, dict):
+            if isinstance(default, dict) and isinstance(data, dict):
+                return data
+            if isinstance(default, list) and isinstance(data, list):
                 return data
     except (json.JSONDecodeError, OSError):
         pass
-    return {}
+    return default
 
 
-def save_bindings(data):
-    with open("user_bindings.json", "w", encoding="utf-8") as f:
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def load_teachers():
-    teachers = {}
-    if os.path.exists("teachers.json"):
-        with open("teachers.json", "r", encoding="utf-8") as file:
-            teachers = json.load(file)
-
-    updated = False
+    teachers = load_json("teachers.json", {})
+    changed = False
     for username, plain_password in TEACHER_CREDENTIALS.items():
-        hashed_password = hash_password(plain_password)
-        if teachers.get(username) != hashed_password:
-            teachers[username] = hashed_password
-            updated = True
-
-    if updated or not os.path.exists("teachers.json"):
-        with open("teachers.json", "w", encoding="utf-8") as file:
-            json.dump(teachers, file, ensure_ascii=False, indent=2)
-
+        hashed = hash_password(plain_password)
+        if teachers.get(username) != hashed:
+            teachers[username] = hashed
+            changed = True
+    if changed or not os.path.exists("teachers.json"):
+        save_json("teachers.json", teachers)
     return teachers
 
 
 def load_school():
-    if not os.path.exists("school.json"):
-        return {}
-    with open("school.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json("school.json", {})
+
+
+def load_teacher_info():
+    return load_json("teacher_info.json", {})
 
 
 def load_attendance():
-    if not os.path.exists("att.json"):
-        return {}
-    with open("att.json", "r", encoding="utf-8") as file:
-        return json.load(file)
+    return load_json("att.json", {})
 
 
 def save_attendance(data):
-    with open("att.json", "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+    save_json("att.json", data)
+
+
+def load_bindings():
+    return load_json("user_bindings.json", {})
+
+
+def save_bindings(data):
+    save_json("user_bindings.json", data)
+
+
+def normalize_news_item(item):
+    if isinstance(item, dict):
+        return {
+            "text": str(item.get("text", "")).strip(),
+            "image": str(item.get("image", "")).strip() if item.get("image") else None,
+            "time": str(item.get("time", "")).strip() or current_timestamp(),
+        }
+    return {"text": str(item), "image": None, "time": current_timestamp()}
+
+
+def load_news():
+    raw = load_json("news.json", [])
+    normalized = [normalize_news_item(item) for item in raw]
+    if normalized != raw:
+        save_json("news.json", normalized)
+    return normalized
+
+
+def save_news(data):
+    prepared = [normalize_news_item(item) for item in data]
+    save_json("news.json", prepared)
 
 
 def get_today():
@@ -152,169 +153,261 @@ def get_time():
     return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%H:%M")
 
 
-def record(user, status):
+def current_timestamp():
+    return (datetime.utcnow() + timedelta(hours=TZ_OFFSET)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def record_attendance(username, status):
     db = load_attendance()
-    today = get_today()
-
-    db.setdefault(today, {})
-
-    db[today][user] = {
-        "status": status,
-        "time": get_time(),
-    }
-
+    day = get_today()
+    db.setdefault(day, {})
+    db[day][username] = {"status": status, "time": get_time()}
     save_attendance(db)
 
 
-def build_daily_status_map(records):
-    status_map = {}
-    for item in records:
-        status_map[item["user"]] = item["status"]
-    return status_map
-
-
 def is_inside_polygon(lat, lon, polygon):
+    inside = False
     x = lon
     y = lat
-    inside = False
     n = len(polygon)
-    p1x, p1y = polygon[0][1], polygon[0][0]
+    p1y, p1x = polygon[0]
 
-    for i in range(n + 1):
-        p2x, p2y = polygon[i % n][1], polygon[i % n][0]
-
-        if y > min(p1y, p2y):
-            if y <= max(p1y, p2y):
-                if x <= max(p1x, p2x):
-                    if p1y != p2y:
-                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                    if p1x == p2x or x <= xinters:
-                        inside = not inside
-
-        p1x, p1y = p2x, p2y
-
+    for i in range(1, n + 1):
+        p2y, p2x = polygon[i % n]
+        if min(p1y, p2y) <= y <= max(p1y, p2y) and x <= max(p1x, p2x):
+            if p1y != p2y:
+                xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+            else:
+                xinters = p1x
+            if p1x == p2x or x <= xinters:
+                inside = not inside
+        p1y, p1x = p2y, p2x
     return inside
 
 
-# ===== WEB =====
+def format_teacher_label(username):
+    return username.replace("_", " ").title()
+
+
+def kb_main():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("🏫 Maktab"), KeyboardButton("👨‍🏫 O‘qituvchilar"))
+    kb.row(KeyboardButton("📰 Yangiliklar"), KeyboardButton("📩 Murojaat"))
+    kb.row(KeyboardButton("🔐 Kabinet"))
+    return kb
+
+
+def kb_teachers():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    teachers = list(load_teachers().keys())
+    for i in range(0, len(teachers), 2):
+        row = [KeyboardButton(format_teacher_label(teachers[i]))]
+        if i + 1 < len(teachers):
+            row.append(KeyboardButton(format_teacher_label(teachers[i + 1])))
+        kb.row(*row)
+    kb.row(KeyboardButton("⬅️ Orqaga"))
+    return kb
+
+
+def kb_cabinet():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("✅ Keldim"), KeyboardButton("🚶 Ketdim"))
+    kb.row(KeyboardButton("⚠️ Uzrli"), KeyboardButton("📊 Statistika"))
+    kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("🚪 Chiqish"))
+    return kb
+
+
+def kb_location_request():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.row(KeyboardButton("📍 Lokatsiya yuborish", request_location=True))
+    kb.row(KeyboardButton("⬅️ Orqaga"))
+    return kb
+
+
+def ensure_teacher_binding(username, uid):
+    bindings = load_bindings()
+    current = bindings.get(username)
+    if current is None:
+        bindings[username] = uid
+        save_bindings(bindings)
+        return True
+    try:
+        return int(current) == int(uid)
+    except (TypeError, ValueError):
+        return False
+
+
+def get_teacher_by_label(label):
+    lookup = {}
+    for username in load_teachers().keys():
+        lookup[format_teacher_label(username)] = username
+    return lookup.get(label)
+
+
+def login_required(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not web_session.get("admin_ok"):
+            return redirect(url_for("admin_login"))
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
+def render_html_page(title, content):
+    return f"""
+<!DOCTYPE html>
+<html lang='uz'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>{title}</title>
+<style>
+    body {{ font-family: Arial, sans-serif; background: #f5f7fb; margin: 0; color: #0f172a; }}
+    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 20px; }}
+    .card {{ background: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }}
+    h1, h2, h3 {{ margin-top: 0; }}
+    a.btn, button {{ background: #2563eb; color: white; border: none; border-radius: 8px; padding: 10px 14px; text-decoration: none; cursor: pointer; }}
+    a.btn.danger, button.danger {{ background: #dc2626; }}
+    input, textarea {{ width: 100%; padding: 10px; margin-top: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }}
+    .muted {{ color: #64748b; }}
+    .topnav {{ display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }}
+</style>
+</head>
+<body>
+<div class='wrap'>
+{content}
+</div>
+</body>
+</html>
+"""
+
+
 @app.route("/")
 def home():
     return "Bot ishlayapti"
 
 
-@app.route("/add", methods=["GET", "POST"])
-def add():
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    error = ""
     if request.method == "POST":
-        teachers = load_teachers()
-        teachers[request.form.get("u")] = hash_password(request.form.get("p"))
-        with open("teachers.json", "w", encoding="utf-8") as file:
-            json.dump(teachers, file, ensure_ascii=False, indent=2)
-        return "Qoshildi <a href='/dashboard'>Orqaga</a>"
+        u = (request.form.get("username") or "").strip()
+        p = request.form.get("password") or ""
+        if u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
+            web_session["admin_ok"] = True
+            return redirect("/dashboard")
+        error = "Login yoki parol noto‘g‘ri"
 
-    return '''
-    <form method="post">
-    <input name="u"><br>
-    <input name="p"><br>
-    <button>Qoshish</button>
-    </form>
-    '''
+    content = f"""
+    <div class='card' style='max-width:420px; margin:40px auto;'>
+        <h2>🔐 Admin kirish</h2>
+        <form method='post'>
+            <label>Login</label>
+            <input name='username' required>
+            <label>Parol</label>
+            <input name='password' type='password' required>
+            <button type='submit'>Kirish</button>
+        </form>
+        <p style='color:#dc2626;'>{error}</p>
+    </div>
+    """
+    return render_html_page("Admin Login", content)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    web_session.clear()
+    return redirect(url_for("admin_login"))
 
 
 @app.route("/dashboard")
+@login_required
 def dashboard():
     db = load_attendance()
     teachers = load_teachers()
     news = load_news()
 
-    html = """
-    <html>
-    <head>
-    <title>Davomat</title>
-    <style>
-        body {font-family: Arial; background: #0f172a; color: white;}
-        h1 {text-align: center;}
-        .card {background: #1e293b; padding: 15px; margin: 10px; border-radius: 10px;}
-        .green {color: #22c55e;}
-        .blue {color: #3b82f6;}
-        .yellow {color: #eab308;}
-        .gray {color: #9ca3af;}
-        a {color: #93c5fd;}
-    </style>
-    </head>
-    <body>
-    <h1>📊 Davomat Dashboard</h1>
+    news_rows = ""
+    for idx, item in enumerate(news):
+        image_text = item.get("image") or "-"
+        news_rows += (
+            "<div class='card'>"
+            f"<p><b>#{idx}</b> {item.get('text', '')}</p>"
+            f"<p class='muted'>Rasm: {image_text}</p>"
+            f"<p class='muted'>Vaqt: {item.get('time', '')}</p>"
+            f"<a class='btn danger' href='/delete_news/{idx}'>O‘chirish</a>"
+            "</div>"
+        )
+    if not news_rows:
+        news_rows = "<p class='muted'>Yangilik yo‘q.</p>"
 
-    <div style='text-align:center; margin-bottom:20px;'>
-    <a href='/add_news'>📰 Yangilik qo‘shish</a> |
-    <a href='/add_school'>🏫 Maktab info</a> |
-    <a href='/add_teacher_info'>👨‍🏫 Teacher info</a> |
-    <a href='/add_class'>📚 Sinf info</a>
-    </div>
-    """
-
-    html += "<div class='card'><h3>📰 Yangiliklar</h3>"
-    if news:
-        for index, item in enumerate(news):
-            if isinstance(item, dict):
-                text = item.get("text", "")
-                image = item.get("image")
-            else:
-                text = str(item)
-                image = None
-            image_text = "🖼️ bor" if image else "🖼️ yo‘q"
-            html += f"<p>{index}. {text} ({image_text}) - <a href='/delete_news/{index}'>❌ Delete</a></p>"
-    else:
-        html += "<p class='gray'>Yangilik yo‘q</p>"
-    html += "</div>"
-
+    attendance_blocks = ""
     for date_key in sorted(db.keys(), reverse=True):
-        html += f"<div class='card'><h3>📅 {date_key}</h3>"
-
         day_data = db.get(date_key, {})
-
+        rows = ""
         for teacher in teachers.keys():
             info = day_data.get(teacher)
-
             if info:
-                status = info["status"]
-                time = info["time"]
-
-                if status == "Keldi":
-                    cls = "green"
-                elif status == "Ketdi":
-                    cls = "blue"
-                elif status == "Uzrli":
-                    cls = "yellow"
-                else:
-                    cls = "gray"
-
-                html += f"<p class='{cls}'>{teacher} — {status} ({time})</p>"
+                rows += f"<p><b>{teacher}</b> — {info.get('status', '-') } ({info.get('time', '-')})</p>"
             else:
-                html += f"<p class='gray'>{teacher} — Belgilanmagan</p>"
+                rows += f"<p class='muted'><b>{teacher}</b> — Belgilanmagan</p>"
+        attendance_blocks += f"<div class='card'><h3>📅 {date_key}</h3>{rows}</div>"
 
-        html += "</div>"
+    content = f"""
+    <h1>🏫 Maktab boshqaruv paneli</h1>
+    <div class='topnav'>
+        <a class='btn' href='/add_news'>📰 Yangilik qo‘shish</a>
+        <a class='btn' href='/add_school'>🏫 Maktab ma’lumoti</a>
+        <a class='btn' href='/add_teacher_info'>👨‍🏫 O‘qituvchi info</a>
+        <a class='btn danger' href='/admin/logout'>🚪 Chiqish</a>
+    </div>
 
-    html += "</body></html>"
-    return html
+    <div class='grid'>
+        <div class='card'>
+            <h2>📰 Yangiliklar</h2>
+            {news_rows}
+        </div>
+        <div class='card'>
+            <h2>📊 Davomat</h2>
+            {attendance_blocks if attendance_blocks else "<p class='muted'>Davomat yo‘q.</p>"}
+        </div>
+    </div>
+    """
+    return render_html_page("Dashboard", content)
 
 
 @app.route("/add_news", methods=["GET", "POST"])
+@login_required
 def add_news():
     if request.method == "POST":
-        news = load_news()
-        news.append({"text": request.form.get("text", ""), "image": None})
-        save_news(news)
-        return "Qoshildi <a href='/dashboard'>Orqaga</a>"
+        text = (request.form.get("text") or "").strip()
+        image = (request.form.get("image") or "").strip() or None
+        if text:
+            news = load_news()
+            news.append({"text": text, "image": image, "time": current_timestamp()})
+            save_news(news)
+        return redirect("/dashboard")
 
-    return '''
-    <form method="post">
-    <textarea name="text"></textarea><br>
-    <button>Qoshish</button>
-    </form>
-    '''
+    content = """
+    <div class='card'>
+        <h2>📰 Yangilik qo‘shish</h2>
+        <form method='post'>
+            <label>Matn</label>
+            <textarea name='text' rows='5' required></textarea>
+            <label>Rasm URL yoki Telegram file_id (ixtiyoriy)</label>
+            <input name='image'>
+            <button type='submit'>Saqlash</button>
+        </form>
+        <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
+    </div>
+    """
+    return render_html_page("Add News", content)
 
 
 @app.route("/delete_news/<int:index>")
+@login_required
 def delete_news(index):
     news = load_news()
     if 0 <= index < len(news):
@@ -324,351 +417,59 @@ def delete_news(index):
 
 
 @app.route("/add_school", methods=["GET", "POST"])
+@login_required
 def add_school():
     if request.method == "POST":
-        data = {"info": request.form.get("text")}
-        with open("school.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
+        save_json("school.json", {"info": request.form.get("text", "")})
+        return redirect("/dashboard")
 
-    return '''
-    <form method="post">
-    <textarea name="text"></textarea><br>
-    <button>Saqlash</button>
-    </form>
-    '''
+    school = load_school().get("info", "")
+    content = f"""
+    <div class='card'>
+        <h2>🏫 Maktab ma’lumoti</h2>
+        <form method='post'>
+            <textarea name='text' rows='8'>{school}</textarea>
+            <button type='submit'>Saqlash</button>
+        </form>
+        <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
+    </div>
+    """
+    return render_html_page("School Info", content)
 
 
 @app.route("/add_teacher_info", methods=["GET", "POST"])
+@login_required
 def add_teacher_info():
     if request.method == "POST":
-        data = load_teacher_info()
-        data[request.form.get("name")] = request.form.get("text")
-
-        with open("teacher_info.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
-
-    return '''
-    <form method="post">
-    O'qituvchi username:<br>
-    <input name="name"><br>
-    Info:<br>
-    <textarea name="text"></textarea><br>
-    <button>Saqlash</button>
-    </form>
-    '''
-
-
-@app.route("/add_class", methods=["GET", "POST"])
-def add_class():
-    if request.method == "POST":
-        data = load_classes()
-        data[request.form.get("name")] = request.form.get("text")
-
-        with open("classes.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        return "Saqlandi <a href='/dashboard'>Orqaga</a>"
-
-    return '''
-    <form method="post">
-    Sinf nomi:<br>
-    <input name="name"><br>
-    Info:<br>
-    <textarea name="text"></textarea><br>
-    <button>Saqlash</button>
-    </form>
-    '''
-
-
-# ===== KEYBOARD =====
-def kb_main():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("🏫 Maktab"), KeyboardButton("📚 Sinflar"))
-    kb.row(KeyboardButton("👨‍🏫 O'qituvchilar"), KeyboardButton("📰 Yangiliklar"))
-    kb.row(KeyboardButton("🔐 Kabinet"), KeyboardButton("📩 Murojaat"))
-    return kb
-
-
-def kb_classes():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    classes = ["1-a", "2-a", "3-a", "3-b", "4-a", "5-a", "6-a", "6-b", "7-a", "8-a", "9-a", "9-b", "10-a", "11-a"]
-    for idx in range(0, len(classes), 2):
-        left = KeyboardButton(classes[idx].upper())
-        if idx + 1 < len(classes):
-            right = KeyboardButton(classes[idx + 1].upper())
-            kb.row(left, right)
-        else:
-            kb.row(left)
-    kb.row(KeyboardButton("⬅️ Orqaga"))
-    return kb
-
-
-def kb_teachers():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    teacher_buttons = list(load_teachers().keys())
-    for idx in range(0, len(teacher_buttons), 2):
-        left = KeyboardButton(teacher_buttons[idx])
-        if idx + 1 < len(teacher_buttons):
-            right = KeyboardButton(teacher_buttons[idx + 1])
-            kb.row(left, right)
-        else:
-            kb.row(left)
-    kb.row(KeyboardButton("⬅️ Orqaga"))
-    return kb
-
-
-def kb_panel():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("🟢 Keldim"), KeyboardButton("🔵 Ketdim"))
-    kb.row(KeyboardButton("🟡 Uzrli"), KeyboardButton("📊 Statistika"))
-    kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("⬅️ Chiqish"))
-    return kb
-
-
-def kb_location_request():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.row(KeyboardButton("📍 Send Location", request_location=True))
-    kb.row(KeyboardButton("⬅️ Orqaga"))
-    return kb
-
-
-# ===== START =====
-@bot.message_handler(commands=["start"])
-def start(message):
-    uid = message.chat.id
-    if uid in sessions and sessions[uid].get("ok"):
-        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-        return
-    bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
-
-
-# ===== LOCATION =====
-@bot.message_handler(content_types=["location"])
-def handle_location(message):
-    uid = message.chat.id
-    if uid not in sessions:
-        return
-    if not sessions[uid].get("ok"):
-        return
-    if sessions[uid].get("step") != "location":
-        return
-
-    lat = message.location.latitude
-    lon = message.location.longitude
-    user = sessions[uid]["u"]
-
-    if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
-        record(user, "Keldi")
-        bot.send_message(uid, "Belgilandi: Keldi👏", reply_markup=ReplyKeyboardRemove())
-        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-    else:
-        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=ReplyKeyboardRemove())
-        bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-
-    sessions[uid].pop("step", None)
-
-
-# ===== TEXT ROUTER =====
-@bot.message_handler(content_types=["text"])
-def text_router(message):
-    uid = message.chat.id
-    text = (message.text or "").strip()
-
-    if uid in sessions and sessions[uid].get("step") == "u":
-        sessions[uid]["u"] = text
-        sessions[uid]["step"] = "p"
-        bot.send_message(uid, "Parol🧐")
-        return
-
-    if uid in sessions and sessions[uid].get("step") == "p":
-        teachers = load_teachers()
-        if teachers.get(sessions[uid]["u"]) == hash_password(text):
-            username = sessions[uid]["u"]
-            bindings = load_bindings()
-            bound_chat_id = bindings.get(username)
-
-            if bound_chat_id is None:
-                bindings[username] = uid
-                save_bindings(bindings)
-            else:
-                try:
-                    normalized_bound_chat_id = int(bound_chat_id)
-                except (TypeError, ValueError):
-                    normalized_bound_chat_id = None
-
-                if normalized_bound_chat_id != uid:
-                    bot.send_message(uid, "❌ Bu akkaunt boshqa Telegram qurilmaga bog‘langan")
-                    sessions.pop(uid, None)
-                    return
-
-            sessions[uid] = {"ok": True, "u": username}
-            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-        else:
-            bot.send_message(uid, "Kiritilgan ma'lumot nato'g'ri😔")
-        return
-
-    if text == "⬅️ Orqaga":
-        if uid in sessions and sessions[uid].get("ok") and sessions[uid].get("step") == "location":
-            sessions[uid].pop("step", None)
-            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-        else:
-            bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
-        return
-
-    if text == "🏫 Maktab":
-        school = load_school()
-        bot.send_message(uid, school.get("info", "Ma’lumot yo‘q"), reply_markup=kb_main())
-        return
-
-    if text == "📚 Sinflar":
-        bot.send_message(uid, "📚 Sinflar", reply_markup=kb_classes())
-        return
-
-    classes = load_classes()
-    class_key = text.lower()
-    if class_key in classes:
-        bot.send_message(uid, f"{class_key}\n{classes.get(class_key, 'Ma’lumot yo‘q')}", reply_markup=kb_classes())
-        return
-
-    if text == "👨‍🏫 O'qituvchilar":
-        bot.send_message(uid, "👨‍🏫 O‘qituvchilar", reply_markup=kb_teachers())
-        return
-
-    if text in load_teachers().keys():
-        data_info = load_teacher_info()
-        info = data_info.get(text, "Ma’lumot yo‘q")
-        bot.send_message(uid, f"{text}\n{info}", reply_markup=kb_teachers())
-        return
-
-    if text == "📩 Murojaat":
-        bot.send_message(uid, "Muammo yuz bersa 👉 @zkurtuve", reply_markup=kb_main())
-        return
-
-    if text == "📰 Yangiliklar":
-        news = load_news()
-
-        if not news:
-            bot.send_message(uid, "Hozircha yangilik yo‘q", reply_markup=kb_main())
-            return
-
-        bot.send_message(uid, "📰 Yangiliklar:", reply_markup=kb_main())
-        for item in news[-5:][::-1]:
-            if isinstance(item, dict):
-                text_value = item.get("text", "")
-                image = item.get("image")
-                if image:
-                    bot.send_photo(uid, image, caption=text_value)
-                else:
-                    bot.send_message(uid, text_value)
-            else:
-                bot.send_message(uid, str(item))
-        return
-
-    if text == "🔐 Kabinet":
-        if uid in sessions and sessions[uid].get("ok"):
-            bot.send_message(uid, "Kabinet", reply_markup=kb_panel())
-            return
-        sessions[uid] = {"step": "u"}
-        bot.send_message(uid, "Username")
-        return
-
-    if uid in sessions and sessions[uid].get("ok"):
-        user = sessions[uid]["u"]
-
-        if text == "🟢 Keldim":
-            sessions[uid]["step"] = "location"
-            bot.send_message(uid, "Iltimos, lokatsiyangizni yuboring.", reply_markup=kb_location_request())
-            return
-
-        if text == "🔵 Ketdim":
-            record(user, "Ketdi")
-            bot.send_message(uid, "Belgilandi: Ketdi🤝", reply_markup=kb_panel())
-            return
-
-        if text == "🟡 Uzrli":
-            record(user, "Uzrli")
-            bot.send_message(uid, "Belgilandi: Uzrli👌", reply_markup=kb_panel())
-            return
-
-        if text == "📊 Statistika":
-            db = load_attendance()
-            today = get_today()
-
-            teachers = load_teachers()
-            today_data = db.get(today, {})
-
-            lines = [f"Statistika ({today})"]
-
-            for teacher in teachers.keys():
-                info = today_data.get(teacher)
-
-                if info:
-                    status = info["status"]
-                    time = info["time"]
-
-                    if status == "Keldi":
-                        icon = "🟢"
-                    elif status == "Ketdi":
-                        icon = "🔵"
-                    elif status == "Uzrli":
-                        icon = "🟡"
-                    else:
-                        icon = "⚫"
-
-                    lines.append(f"{icon} {teacher} — {status} ({time})")
-
-                else:
-                    lines.append(f"⚫ {teacher} — Belgilanmagan😠")
-
-            bot.send_message(uid, "\n".join(lines), reply_markup=kb_panel())
-            return
-
-        if text == "📜 Tarix":
-            db = load_attendance()
-            teachers = load_teachers()
-
-            if not db:
-                bot.send_message(uid, "Tarix bo‘sh", reply_markup=kb_panel())
-                return
-
-            lines = ["Keldi ketdi tarixi"]
-
-            for date_key in sorted(db.keys(), reverse=True):
-                lines.append(f"\n📅 {date_key}")
-
-                day_data = db.get(date_key, {})
-
-                for teacher in teachers.keys():
-                    info = day_data.get(teacher)
-
-                    if info:
-                        lines.append(f"{teacher} — {info['status']} ({info['time']})")
-                    else:
-                        lines.append(f"{teacher} — Belgilanmagan")
-
-            bot.send_message(uid, "\n".join(lines), reply_markup=kb_panel())
-            return
-
-        if text == "⬅️ Chiqish":
-            sessions.pop(uid, None)
-            bot.send_message(uid, "Chiqildi🫡", reply_markup=kb_main())
-            return
-
-    bot.send_message(uid, "🏫 Tizim", reply_markup=kb_main())
-
-
-# Ensure required teachers are present at startup.
-load_teachers()
-
-WEBHOOK_URL = "https://mybot-4k74.onrender.com"
+        username = (request.form.get("name") or "").strip()
+        text = (request.form.get("text") or "").strip()
+        if username:
+            data = load_teacher_info()
+            data[username] = text
+            save_json("teacher_info.json", data)
+        return redirect("/dashboard")
+
+    options = "".join([f"<option value='{name}'>{name}</option>" for name in load_teachers().keys()])
+    content = f"""
+    <div class='card'>
+        <h2>👨‍🏫 O‘qituvchi ma’lumoti</h2>
+        <form method='post'>
+            <label>Username</label>
+            <input name='name' list='teacher-list' required>
+            <datalist id='teacher-list'>{options}</datalist>
+            <label>Ma’lumot</label>
+            <textarea name='text' rows='6' required></textarea>
+            <button type='submit'>Saqlash</button>
+        </form>
+        <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
+    </div>
+    """
+    return render_html_page("Teacher Info", content)
 
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    json_str = request.get_data().decode("UTF-8")
+    json_str = request.get_data().decode("utf-8")
     update = telebot.types.Update.de_json(json_str)
     bot.process_new_updates([update])
     return "OK", 200
@@ -681,5 +482,238 @@ def set_webhook():
     return "Webhook set"
 
 
+@bot.message_handler(commands=["start"])
+def handle_start(message):
+    uid = message.chat.id
+    user_session = sessions.get(uid)
+    if user_session and user_session.get("ok"):
+        bot.send_message(uid, "🔐 Kabinetingizga xush kelibsiz", reply_markup=kb_cabinet())
+    else:
+        bot.send_message(uid, "🏫 Maktab tizimiga xush kelibsiz", reply_markup=kb_main())
+
+
+@bot.message_handler(content_types=["location"])
+def handle_location(message):
+    uid = message.chat.id
+    user_session = sessions.get(uid)
+    if not user_session or not user_session.get("ok") or user_session.get("step") != "wait_location":
+        return
+
+    lat = message.location.latitude
+    lon = message.location.longitude
+
+    if is_inside_polygon(lat, lon, SCHOOL_POLYGON):
+        record_attendance(user_session["u"], "Keldi")
+        bot.send_message(uid, "✅ Keldi holati qabul qilindi", reply_markup=kb_cabinet())
+    else:
+        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=kb_cabinet())
+
+    user_session.pop("step", None)
+
+
+def send_last_news(uid):
+    news = load_news()
+    if not news:
+        bot.send_message(uid, "Hozircha yangilik yo‘q", reply_markup=kb_main())
+        return
+
+    bot.send_message(uid, "📰 So‘nggi 5 ta yangilik:", reply_markup=kb_main())
+    for item in news[-5:][::-1]:
+        caption = f"{item.get('text', '')}\n🕒 {item.get('time', '')}".strip()
+        image = item.get("image")
+        if image:
+            bot.send_photo(uid, image, caption=caption[:1024])
+        else:
+            bot.send_message(uid, caption)
+
+
+def send_statistics(uid):
+    db = load_attendance()
+    today = get_today()
+    day_data = db.get(today, {})
+    teachers = load_teachers()
+
+    lines = [f"📊 Bugungi statistika ({today})"]
+    for username in teachers.keys():
+        info = day_data.get(username)
+        if info:
+            status = info.get("status", "-")
+            icon = "✅" if status == "Keldi" else "🚶" if status == "Ketdi" else "⚠️" if status == "Uzrli" else "•"
+            lines.append(f"{icon} {format_teacher_label(username)} — {status} ({info.get('time', '-')})")
+        else:
+            lines.append(f"• {format_teacher_label(username)} — Belgilanmagan")
+
+    bot.send_message(uid, "\n".join(lines), reply_markup=kb_cabinet())
+
+
+def send_history(uid):
+    db = load_attendance()
+    if not db:
+        bot.send_message(uid, "📜 Tarix bo‘sh", reply_markup=kb_cabinet())
+        return
+
+    teachers = load_teachers()
+    lines = ["📜 Davomat tarixi"]
+    for date_key in sorted(db.keys(), reverse=True):
+        lines.append(f"\n📅 {date_key}")
+        day_data = db.get(date_key, {})
+        for username in teachers.keys():
+            info = day_data.get(username)
+            if info:
+                lines.append(f"{format_teacher_label(username)} — {info.get('status', '-')} ({info.get('time', '-')})")
+            else:
+                lines.append(f"{format_teacher_label(username)} — Belgilanmagan")
+
+    text = "\n".join(lines)
+    for i in range(0, len(text), 3800):
+        bot.send_message(uid, text[i : i + 3800], reply_markup=kb_cabinet())
+
+
+def forward_contact_to_admin(message):
+    if ADMIN_TG_ID == 0:
+        bot.reply_to(message, "Xabar qabul qilindi ✅", reply_markup=kb_main())
+        return
+
+    user = message.from_user
+    header = (
+        "📩 Yangi murojaat\n"
+        f"👤 Ism: {user.first_name or '-'} {user.last_name or ''}\n"
+        f"🔗 Username: @{user.username if user.username else 'yo‘q'}\n"
+        f"🆔 ID: {user.id}\n"
+    )
+
+    try:
+        if message.content_type == "text":
+            bot.send_message(ADMIN_TG_ID, f"{header}\n💬 {message.text}")
+        elif message.content_type == "photo":
+            caption = message.caption or ""
+            bot.send_photo(ADMIN_TG_ID, message.photo[-1].file_id, caption=f"{header}\n🖼 {caption}"[:1024])
+        elif message.content_type == "document":
+            cap = message.caption or ""
+            bot.send_document(ADMIN_TG_ID, message.document.file_id, caption=f"{header}\n📎 {cap}"[:1024])
+        else:
+            bot.send_message(ADMIN_TG_ID, f"{header}\nℹ️ Qo‘llab-quvvatlanmagan format: {message.content_type}")
+        bot.reply_to(message, "Murojaatingiz yuborildi ✅", reply_markup=kb_main())
+    except Exception:
+        bot.reply_to(message, "Xabar yuborishda xatolik bo‘ldi", reply_markup=kb_main())
+
+
+def begin_login(uid):
+    sessions[uid] = {"step": "login_username"}
+    bot.send_message(uid, "Login kiriting:")
+
+
+@bot.message_handler(content_types=["text", "photo", "document"])
+def message_router(message):
+    uid = message.chat.id
+    text = (message.text or "").strip() if message.content_type == "text" else ""
+    user_session = sessions.get(uid, {})
+
+    if user_session.get("step") == "await_contact_message":
+        forward_contact_to_admin(message)
+        user_session.pop("step", None)
+        return
+
+    if message.content_type != "text":
+        return
+
+    if user_session.get("step") == "login_username":
+        sessions[uid]["pending_username"] = text
+        sessions[uid]["step"] = "login_password"
+        bot.send_message(uid, "Parol kiriting:")
+        return
+
+    if user_session.get("step") == "login_password":
+        username = sessions[uid].get("pending_username", "")
+        teachers = load_teachers()
+        if teachers.get(username) == hash_password(text):
+            if not ensure_teacher_binding(username, uid):
+                sessions.pop(uid, None)
+                bot.send_message(uid, "❌ Bu akkaunt boshqa Telegram ID ga bog‘langan")
+                return
+            sessions[uid] = {"ok": True, "u": username}
+            bot.send_message(uid, "✅ Muvaffaqiyatli kirildi", reply_markup=kb_cabinet())
+        else:
+            sessions[uid] = {"step": "login_username"}
+            bot.send_message(uid, "Login yoki parol noto‘g‘ri. Loginni qayta kiriting:")
+        return
+
+    if text == "⬅️ Orqaga":
+        if user_session.get("ok") and user_session.get("step") == "wait_location":
+            user_session.pop("step", None)
+            bot.send_message(uid, "🔐 Kabinet", reply_markup=kb_cabinet())
+        else:
+            user_session.pop("step", None)
+            bot.send_message(uid, "🏫 Asosiy menyu", reply_markup=kb_main())
+        return
+
+    if text == "🏫 Maktab":
+        bot.send_message(uid, load_school().get("info", "Ma’lumot yo‘q"), reply_markup=kb_main())
+        return
+
+    if text in ("👨‍🏫 O‘qituvchilar", "👨‍🏫 O'qituvchilar"):
+        bot.send_message(uid, "👨‍🏫 O‘qituvchilar ro‘yxati", reply_markup=kb_teachers())
+        return
+
+    selected_teacher = get_teacher_by_label(text)
+    if selected_teacher:
+        info = load_teacher_info().get(selected_teacher, "Ma’lumot yo‘q")
+        bot.send_message(uid, f"{format_teacher_label(selected_teacher)}\n\n{info}", reply_markup=kb_teachers())
+        return
+
+    if text == "📰 Yangiliklar":
+        send_last_news(uid)
+        return
+
+    if text == "📩 Murojaat":
+        sessions.setdefault(uid, {})["step"] = "await_contact_message"
+        bot.send_message(uid, "Murojaatingizni yuboring. Matn, rasm yoki fayl yuborishingiz mumkin.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    if text == "🔐 Kabinet":
+        if user_session.get("ok"):
+            bot.send_message(uid, "🔐 Kabinet", reply_markup=kb_cabinet())
+            return
+        begin_login(uid)
+        return
+
+    if user_session.get("ok"):
+        username = user_session["u"]
+
+        if text == "✅ Keldim":
+            sessions[uid]["step"] = "wait_location"
+            bot.send_message(uid, "Davomat uchun lokatsiya yuboring:", reply_markup=kb_location_request())
+            return
+
+        if text == "🚶 Ketdim":
+            record_attendance(username, "Ketdi")
+            bot.send_message(uid, "🚶 Ketdi holati saqlandi", reply_markup=kb_cabinet())
+            return
+
+        if text == "⚠️ Uzrli":
+            record_attendance(username, "Uzrli")
+            bot.send_message(uid, "⚠️ Uzrli holati saqlandi", reply_markup=kb_cabinet())
+            return
+
+        if text == "📊 Statistika":
+            send_statistics(uid)
+            return
+
+        if text == "📜 Tarix":
+            send_history(uid)
+            return
+
+        if text == "🚪 Chiqish":
+            sessions.pop(uid, None)
+            bot.send_message(uid, "🚪 Kabinetdan chiqdingiz", reply_markup=kb_main())
+            return
+
+    bot.send_message(uid, "Buyruq tanlang", reply_markup=kb_main())
+
+
+load_teachers()
+load_news()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")))
