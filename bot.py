@@ -14,7 +14,10 @@ from flask import Flask, redirect, request, session as web_session, url_for
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-TOKEN = os.getenv("BOT_TOKEN", "")
+TOKEN = os.getenv("BOT_TOKEN")
+if TOKEN is None or not TOKEN.strip():
+    raise ValueError("BOT_TOKEN environment variable not set")
+
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
 CONTACT_RECEIVER_ID = int(os.getenv("CONTACT_RECEIVER_ID", str(ADMIN_TG_ID)))
