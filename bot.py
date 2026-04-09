@@ -15,8 +15,8 @@ from telebot.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemo
 
 
 TOKEN = os.getenv("BOT_TOKEN")
-if TOKEN is None or not TOKEN.strip():
-    raise ValueError("BOT_TOKEN environment variable not set")
+if TOKEN is None or ":" not in TOKEN:
+    raise ValueError("BOT_TOKEN is not set correctly")
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
