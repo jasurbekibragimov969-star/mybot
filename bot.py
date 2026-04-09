@@ -14,9 +14,7 @@ from flask import Flask, redirect, request, session as web_session, url_for
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 
-TOKEN = os.getenv("BOT_TOKEN")
-if TOKEN is None or ":" not in TOKEN:
-    raise ValueError("BOT_TOKEN is not set correctly")
+TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
