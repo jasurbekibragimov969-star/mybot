@@ -335,6 +335,14 @@ def all_monthly_statistics(year, month):
     return result
 
 
+def format_news_message(item):
+    return (
+        "📰 YANGILIK\n"
+        f"📌 {item.get('text', '')}\n"
+        f"🕒 {item.get('time', '')}"
+    )
+
+
 def build_sheet_xml(rows):
     xml_rows = []
     for r_index, row in enumerate(rows, start=1):
@@ -571,6 +579,36 @@ def dashboard():
                 rows += f"<p class='muted'><b>{teacher}</b> — Belgilanmagan</p>"
         attendance_blocks += f"<div class='card'><h3>📅 {date_key}</h3>{rows}</div>"
 
+    now = now_local()
+    month_stats = all_monthly_statistics(now.year, now.month)
+    stat_rows = ""
+    for username in load_teachers().keys():
+        stat = month_stats.get(username, {})
+        stat_rows += (
+            "<tr>"
+            f"<td>{format_teacher_label(username)}</td>"
+            f"<td>{stat.get('Keldi', 0)}</td>"
+            f"<td>{stat.get('Kechikdi', 0)}</td>"
+            f"<td>{stat.get('Uzrli', 0)}</td>"
+            f"<td>{stat.get('Kelmagan', 0)}</td>"
+            "</tr>"
+        )
+    monthly_table = (
+        "<div class='card'>"
+        f"<h2>📊 Oylik analitika ({now.strftime('%Y-%m')})</h2>"
+        "<div style='overflow-x:auto;'>"
+        "<table style='width:100%;border-collapse:collapse;'>"
+        "<thead><tr>"
+        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>O‘qituvchi</th>"
+        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Keldi</th>"
+        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Kechikdi</th>"
+        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Uzrli</th>"
+        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Kelmagan</th>"
+        "</tr></thead>"
+        f"<tbody>{stat_rows}</tbody>"
+        "</table></div></div>"
+    )
+
     content = f"""
     <h1>🏫 Maktab boshqaruv paneli</h1>
     <div class='topnav'>
@@ -590,6 +628,7 @@ def dashboard():
             {attendance_blocks if attendance_blocks else "<p class='muted'>Davomat yo‘q.</p>"}
         </div>
     </div>
+    {monthly_table}
     """
     return render_html_page("Dashboard", content)
 
@@ -749,7 +788,7 @@ def send_last_news(uid):
 
     bot.send_message(uid, "📰 So‘nggi 5 ta yangilik:", reply_markup=kb_main())
     for item in news[-5:][::-1]:
-        caption = f"{item.get('text', '')}\n🕒 {item.get('time', '')}".strip()
+        caption = format_news_message(item)
         image = item.get("image")
         if image:
             bot.send_photo(uid, image, caption=caption[:1024])
