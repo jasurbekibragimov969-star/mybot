@@ -11,7 +11,13 @@ from xml.sax.saxutils import escape
 
 import telebot
 from flask import Flask, redirect, request, session as web_session, url_for
-from telebot.types import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telebot.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
 
 TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
@@ -21,7 +27,9 @@ ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
 CONTACT_RECEIVER_ID = int(os.getenv("CONTACT_RECEIVER_ID", str(ADMIN_TG_ID)))
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
 START_HOUR = 8
-START_MINUTE = 30
+START_MINUTE = 0
+GRACE_HOUR = 8
+GRACE_MINUTE = 5
 REMINDER_HOUR = 8
 REMINDER_MINUTE = 0
 MAX_LOCATION_AGE_SECONDS = 120
@@ -73,6 +81,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "school-secret-key")
 sessions = {}
 admin_reply_map = {}
 reminder_state = {"date": None}
+late_alert_targets = {}
 
 
 def hash_password(password: str) -> str:
@@ -144,6 +153,14 @@ def save_bindings(data):
     save_json("user_bindings.json", data)
 
 
+def load_warnings():
+    return load_json("warnings.json", {})
+
+
+def save_warnings(data):
+    save_json("warnings.json", data)
+
+
 def normalize_news_item(item):
     if isinstance(item, dict):
         return {
@@ -193,6 +210,13 @@ def parse_date_safe(date_text):
 def record_attendance(username, status):
     db = load_attendance()
     day = get_today()
+    db.setdefault(day, {})
+    db[day][username] = {"status": status, "time": get_time()}
+    save_attendance(db)
+
+
+def record_attendance_for_day(day, username, status):
+    db = load_attendance()
     db.setdefault(day, {})
     db[day][username] = {"status": status, "time": get_time()}
     save_attendance(db)
@@ -296,8 +320,55 @@ def teacher_from_user_id(uid):
 
 def detect_arrive_status():
     now = now_local()
-    start = now.replace(hour=START_HOUR, minute=START_MINUTE, second=0, microsecond=0)
-    return "Kechikdi" if now > start else "Keldi"
+    grace = now.replace(hour=GRACE_HOUR, minute=GRACE_MINUTE, second=0, microsecond=0)
+    return "Kechikdi" if now > grace else "Keldi"
+
+
+def late_message_keyboard(target_user_id):
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✉️ Xabar yuborish", callback_data=f"late_msg:{target_user_id}"))
+    return kb
+
+
+def uzrli_keyboard(username, teacher_uid, date_key):
+    compact_date = date_key.replace("-", "")
+    approve_data = f"uzrli_ok:{username}:{teacher_uid}:{compact_date}"
+    reject_data = f"uzrli_no:{username}:{teacher_uid}:{compact_date}"
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton("✅ Tasdiqlash", callback_data=approve_data),
+        InlineKeyboardButton("❌ Bekor qilish", callback_data=reject_data),
+    )
+    return kb
+
+
+def register_late_warning(username, uid):
+    warnings = load_warnings()
+    count = int(warnings.get(username, 0)) + 1
+    warnings[username] = count
+    save_warnings(warnings)
+    bot.send_message(
+        uid,
+        "Siz bugun kech qoldingiz ⚠️\nIltimos keyingi kunlari tezroq harakat qiling.",
+    )
+    if count % 3 == 0:
+        alert_text = (
+            "⚠️ O'qituvchi kech qoldi!\n\n"
+            f"👤 Username: {username}\n"
+            f"🆔 ID: {uid}\n"
+            f"📅 Sana: {get_today()}\n"
+            f"⏰ Vaqt: {get_time()}\n"
+            "❗ 3-marta kechikdi"
+        )
+        try:
+            sent = bot.send_message(
+                ADMIN_TG_ID,
+                alert_text,
+                reply_markup=late_message_keyboard(uid),
+            )
+            late_alert_targets[sent.message_id] = uid
+        except Exception:
+            pass
 
 
 def valid_fresh_location(message):
@@ -771,6 +842,7 @@ def handle_location(message):
         arrive_status = detect_arrive_status()
         record_attendance(user_session["u"], arrive_status)
         if arrive_status == "Kechikdi":
+            register_late_warning(user_session["u"], uid)
             bot.send_message(uid, "⏰ Kechikdi holati qabul qilindi", reply_markup=kb_cabinet())
         else:
             bot.send_message(uid, "✅ Keldi holati qabul qilindi", reply_markup=kb_cabinet())
@@ -884,6 +956,77 @@ def begin_login(uid):
     bot.send_message(uid, "Login kiriting:")
 
 
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    data = call.data or ""
+    caller_id = call.from_user.id
+
+    if data.startswith("late_msg:"):
+        if caller_id != ADMIN_TG_ID:
+            bot.answer_callback_query(call.id, "Ruxsat yo‘q")
+            return
+        _, target_id = data.split(":", 1)
+        try:
+            target_id_int = int(target_id)
+        except ValueError:
+            bot.answer_callback_query(call.id, "Xatolik")
+            return
+        sessions.setdefault(caller_id, {})["step"] = "waiting_late_admin_message"
+        sessions[caller_id]["late_target_id"] = target_id_int
+        bot.answer_callback_query(call.id, "Xabar yozing")
+        bot.send_message(caller_id, "O‘qituvchiga yuboriladigan xabarni yozing:")
+        return
+
+    if data.startswith("uzrli_ok:") or data.startswith("uzrli_no:"):
+        if caller_id != ADMIN_TG_ID:
+            bot.answer_callback_query(call.id, "Ruxsat yo‘q")
+            return
+        try:
+            action, username, teacher_uid, compact_date = data.split(":", 3)
+            teacher_uid_int = int(teacher_uid)
+            date_key = datetime.strptime(compact_date, "%Y%m%d").strftime("%Y-%m-%d")
+        except Exception:
+            bot.answer_callback_query(call.id, "Xatolik")
+            return
+
+        db = load_attendance()
+        day_data = db.get(date_key, {})
+        teacher_record = day_data.get(username, {})
+        if teacher_record.get("status") != "pending_uzrli":
+            bot.answer_callback_query(call.id, "So‘rov topilmadi yoki allaqachon ko‘rilgan")
+            return
+
+        if action == "uzrli_ok":
+            record_attendance_for_day(date_key, username, "Uzrli")
+            try:
+                bot.send_message(teacher_uid_int, "Sizning uzrli so'rovingiz tasdiqlandi ✅")
+            except Exception:
+                pass
+            bot.answer_callback_query(call.id, "Tasdiqlandi")
+            try:
+                bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+            except Exception:
+                pass
+            return
+
+        db.setdefault(date_key, {})
+        if username in db[date_key]:
+            db[date_key][username]["status"] = "Uzrli rad etildi"
+        else:
+            db[date_key][username] = {"status": "Uzrli rad etildi", "time": get_time()}
+        save_attendance(db)
+        try:
+            bot.send_message(teacher_uid_int, "Sizning uzrli so'rovingiz rad etildi ❌")
+        except Exception:
+            pass
+        bot.answer_callback_query(call.id, "Bekor qilindi")
+        try:
+            bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        except Exception:
+            pass
+        return
+
+
 @bot.message_handler(content_types=["text", "photo", "document"])
 def message_router(message):
     uid = message.chat.id
@@ -899,6 +1042,28 @@ def message_router(message):
             return
         forward_contact_to_admin(message)
         user_session.pop("step", None)
+        return
+
+    if user_session.get("step") == "waiting_late_admin_message":
+        if uid != ADMIN_TG_ID:
+            user_session.pop("step", None)
+            user_session.pop("late_target_id", None)
+            return
+        if message.content_type != "text" or not text:
+            bot.send_message(uid, "Faqat matnli xabar yuboring.")
+            return
+        target_id = user_session.get("late_target_id")
+        if not target_id:
+            user_session.pop("step", None)
+            bot.send_message(uid, "Maqsadli o‘qituvchi topilmadi.")
+            return
+        try:
+            bot.send_message(int(target_id), f"📬 Admin xabari:\n{text}")
+            bot.send_message(uid, "✅ O‘qituvchiga yuborildi")
+        except Exception:
+            bot.send_message(uid, "❌ Xabar yuborilmadi")
+        user_session.pop("step", None)
+        user_session.pop("late_target_id", None)
         return
 
     if message.content_type != "text":
@@ -983,8 +1148,19 @@ def message_router(message):
             return
 
         if text == "⚠️ Uzrli":
-            record_attendance(username, "Uzrli")
-            bot.send_message(uid, "⚠️ Uzrli holati saqlandi", reply_markup=kb_cabinet())
+            day = get_today()
+            record_attendance(username, "pending_uzrli")
+            bot.send_message(uid, "Admin tasdiqlashini kuting ⏳", reply_markup=kb_cabinet())
+            admin_text = (
+                "⚠️ Uzrli so'rovi!\n\n"
+                f"👤 {username}\n"
+                f"📅 {day}\n\n"
+                "Tasdiqlaysizmi?"
+            )
+            try:
+                bot.send_message(ADMIN_TG_ID, admin_text, reply_markup=uzrli_keyboard(username, uid, day))
+            except Exception:
+                pass
             return
 
         if text == "📊 Statistika":
