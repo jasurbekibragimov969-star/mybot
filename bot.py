@@ -579,6 +579,32 @@ def render_html_page(title, content):
 """
 
 
+def render_reset_form(error_text=""):
+    error_block = f"<p style='color:#dc2626;font-weight:bold;'>{error_text}</p>" if error_text else ""
+    warning_text = "⚠️ DIQQAT!<br>Bu amal barcha davomat (att.json) ma’lumotlarini O‘CHIRADI!<br><br>Bu amalni qaytarib bo‘lmaydi.<br><br>Davom etasizmi?"
+    content = f"""
+    <div class='card' style='max-width:700px; margin:20px auto;'>
+        <h2>🔄 Tizimni tozalash</h2>
+        <form method='post' action='/admin/reset'>
+            <label>ADMIN_USERNAME</label>
+            <input name='username' required>
+            <label>ADMIN_PASSWORD</label>
+            <input name='password' type='password' required>
+            <div style='margin:14px 0;padding:14px;border:2px solid #dc2626;border-radius:10px;background:#fef2f2;font-size:18px;line-height:1.5;'>
+                {warning_text}
+            </div>
+            <div style='display:flex;gap:10px;flex-wrap:wrap;'>
+                <button class='danger' type='submit' name='confirm' value='YES'>YES</button>
+                <button type='submit' name='confirm' value='NO'>NO</button>
+            </div>
+        </form>
+        {error_block}
+        <p style='margin-top:12px;'><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
+    </div>
+    """
+    return render_html_page("System Reset", content)
+
+
 @app.route("/")
 def home():
     return "Bot ishlayapti"
@@ -623,6 +649,7 @@ def dashboard():
     db = load_attendance()
     teachers = load_teachers()
     news = load_news()
+    dashboard_message = web_session.pop("dashboard_message", "")
 
     news_rows = ""
     for idx, item in enumerate(news):
@@ -680,14 +707,20 @@ def dashboard():
         "</table></div></div>"
     )
 
+    message_block = f"<div class='card' style='border:2px solid #22c55e;background:#f0fdf4;'><b>{dashboard_message}</b></div>" if dashboard_message else ""
+
     content = f"""
     <h1>🏫 Maktab boshqaruv paneli</h1>
     <div class='topnav'>
         <a class='btn' href='/add_news'>📰 Yangilik qo‘shish</a>
         <a class='btn' href='/add_school'>🏫 Maktab ma’lumoti</a>
         <a class='btn' href='/add_teacher_info'>👨‍🏫 O‘qituvchi info</a>
+        <form method='post' action='/admin/reset' style='display:inline;'>
+            <button class='danger' type='submit'>🔄 Restart / Yangi yil</button>
+        </form>
         <a class='btn danger' href='/admin/logout'>🚪 Chiqish</a>
     </div>
+    {message_block}
 
     <div class='grid'>
         <div class='card'>
@@ -702,6 +735,30 @@ def dashboard():
     {monthly_table}
     """
     return render_html_page("Dashboard", content)
+
+
+@app.route("/admin/reset", methods=["POST"])
+@login_required
+def admin_reset():
+    username = request.form.get("username")
+    password = request.form.get("password")
+    confirm = (request.form.get("confirm") or "").upper()
+
+    if username is None and password is None and not confirm:
+        return render_reset_form()
+
+    if confirm == "NO":
+        web_session["dashboard_message"] = "Reset bekor qilindi."
+        return redirect("/dashboard")
+
+    if confirm == "YES":
+        if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
+            return render_reset_form("Noto‘g‘ri login ❌")
+        save_attendance({})
+        web_session["dashboard_message"] = "✅ Tizim tozalandi! Yangi o‘quv yili uchun tayyor 📚"
+        return redirect("/dashboard")
+
+    return render_reset_form()
 
 
 @app.route("/add_news", methods=["GET", "POST"])
