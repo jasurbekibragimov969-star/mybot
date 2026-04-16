@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import threading
 import time
@@ -33,6 +34,7 @@ GRACE_MINUTE = 5
 REMINDER_HOUR = 8
 REMINDER_MINUTE = 0
 MAX_LOCATION_AGE_SECONDS = 120
+NEWS_PREVIEW_LIMIT = 500
 
 SCHOOL_POLYGON = [
     (40.855905, 69.629203),
@@ -74,6 +76,17 @@ TEACHER_CREDENTIALS = {
     "jaxongir_isroilov": "jaxongir963",
 }
 
+DATA_DEFAULTS = {
+    "teachers.json": {},
+    "school.json": {},
+    "teacher_info.json": None,
+    "tacher_info.json": {},
+    "att.json": {},
+    "user_bindings.json": {},
+    "warnings.json": {},
+    "news.json": [],
+}
+
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "school-secret-key")
@@ -83,29 +96,61 @@ admin_reply_map = {}
 reminder_state = {"date": None}
 late_alert_targets = {}
 
+json_cache = {}
+json_cache_serialized = {}
+json_lock = threading.RLock()
+
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+def _clone_default(default):
+    return json.loads(json.dumps(default))
+
+
 def load_json(path, default):
-    if not os.path.exists(path):
-        return default
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(default, dict) and isinstance(data, dict):
-                return data
-            if isinstance(default, list) and isinstance(data, list):
-                return data
-    except (json.JSONDecodeError, OSError):
-        pass
-    return default
+    with json_lock:
+        if path in json_cache:
+            return _clone_default(json_cache[path])
+
+        if not os.path.exists(path):
+            data = _clone_default(default)
+            json_cache[path] = _clone_default(data)
+            json_cache_serialized[path] = json.dumps(data, ensure_ascii=False, sort_keys=True)
+            return data
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                valid = (isinstance(default, dict) and isinstance(data, dict)) or (
+                    isinstance(default, list) and isinstance(data, list)
+                )
+                if not valid:
+                    data = _clone_default(default)
+        except (json.JSONDecodeError, OSError):
+            data = _clone_default(default)
+
+        json_cache[path] = _clone_default(data)
+        json_cache_serialized[path] = json.dumps(data, ensure_ascii=False, sort_keys=True)
+        return _clone_default(data)
 
 
 def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with json_lock:
+        serialized = json.dumps(data, ensure_ascii=False, sort_keys=True)
+        if json_cache_serialized.get(path) == serialized:
+            return False
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        json_cache[path] = _clone_default(data)
+        json_cache_serialized[path] = serialized
+        return True
+
+
+def prime_cache():
+    for path, default in DATA_DEFAULTS.items():
+        load_json(path, default)
 
 
 def load_teachers():
@@ -211,14 +256,20 @@ def record_attendance(username, status):
     db = load_attendance()
     day = get_today()
     db.setdefault(day, {})
-    db[day][username] = {"status": status, "time": get_time()}
+    new_payload = {"status": status, "time": get_time()}
+    if db[day].get(username) == new_payload:
+        return
+    db[day][username] = new_payload
     save_attendance(db)
 
 
 def record_attendance_for_day(day, username, status):
     db = load_attendance()
     db.setdefault(day, {})
-    db[day][username] = {"status": status, "time": get_time()}
+    new_payload = {"status": status, "time": get_time()}
+    if db[day].get(username) == new_payload:
+        return
+    db[day][username] = new_payload
     save_attendance(db)
 
 
@@ -247,6 +298,21 @@ def is_inside_polygon(lat, lon, polygon):
     return inside
 
 
+def polygon_centroid(polygon):
+    lat_sum = sum(point[0] for point in polygon)
+    lon_sum = sum(point[1] for point in polygon)
+    return lat_sum / len(polygon), lon_sum / len(polygon)
+
+
+def distance_meters(lat1, lon1, lat2, lon2):
+    r = 6371000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
+    return round(2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+
 def format_teacher_label(username):
     return username.replace("_", " ").title()
 
@@ -255,7 +321,7 @@ def kb_main():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("🏫 Maktab"), KeyboardButton("👨‍🏫 O‘qituvchilar"))
     kb.row(KeyboardButton("📰 Yangiliklar"), KeyboardButton("📩 Murojaat"))
-    kb.row(KeyboardButton("🔐 Kabinet"))
+    kb.row(KeyboardButton("🔐 Kabinet"), KeyboardButton("ℹ️ Yordam"))
     return kb
 
 
@@ -267,7 +333,7 @@ def kb_teachers():
         if i + 1 < len(teachers):
             row.append(KeyboardButton(format_teacher_label(teachers[i + 1])))
         kb.row(*row)
-    kb.row(KeyboardButton("⬅️ Orqaga"))
+    kb.row(KeyboardButton("⬅️ Orqaga"), KeyboardButton("🏠 Asosiy menyu"))
     return kb
 
 
@@ -276,14 +342,14 @@ def kb_cabinet():
     kb.row(KeyboardButton("✅ Keldim"), KeyboardButton("🚶 Ketdim"))
     kb.row(KeyboardButton("⚠️ Uzrli"), KeyboardButton("📊 Statistika"))
     kb.row(KeyboardButton("📜 Tarix"), KeyboardButton("📤 Export"))
-    kb.row(KeyboardButton("🚪 Chiqish"))
+    kb.row(KeyboardButton("⬅️ Orqaga"), KeyboardButton("🚪 Chiqish"))
     return kb
 
 
 def kb_location_request():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.row(KeyboardButton("📍 Lokatsiya yuborish", request_location=True))
-    kb.row(KeyboardButton("⬅️ Orqaga"))
+    kb.row(KeyboardButton("⬅️ Orqaga"), KeyboardButton("🏠 Asosiy menyu"))
     return kb
 
 
@@ -347,10 +413,17 @@ def register_late_warning(username, uid):
     count = int(warnings.get(username, 0)) + 1
     warnings[username] = count
     save_warnings(warnings)
-    bot.send_message(
-        uid,
-        "Siz bugun kech qoldingiz ⚠️\nIltimos keyingi kunlari tezroq harakat qiling.",
-    )
+
+    if count >= 3 and count % 3 == 0:
+        bot.send_message(
+            uid,
+            "⏰ Bugun yana kechikdingiz. Bu qayta-qayta takrorlanyapti, iltimos jadvalni qat’iy rejalashtiring.",
+        )
+    elif count >= 2:
+        bot.send_message(uid, "⚠️ Kechikish qayd etildi. Ertadan vaqtga yanada e’tibor bering.")
+    else:
+        bot.send_message(uid, "⏰ Bugungi belgilash *kechikdi* holatida saqlandi.", parse_mode="Markdown")
+
     if count % 3 == 0:
         alert_text = (
             "⚠️ O'qituvchi kech qoldi!\n\n"
@@ -407,11 +480,23 @@ def all_monthly_statistics(year, month):
 
 
 def format_news_message(item):
-    return (
-        "📰 YANGILIK\n"
-        f"📌 {item.get('text', '')}\n"
-        f"🕒 {item.get('time', '')}"
-    )
+    timestamp = item.get("time", "")
+    dt = None
+    try:
+        dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        pass
+
+    if dt:
+        time_part = dt.strftime("%H:%M | %d-%b")
+    else:
+        time_part = timestamp
+
+    text = item.get("text", "")
+    if len(text) > NEWS_PREVIEW_LIMIT:
+        text = f"{text[:NEWS_PREVIEW_LIMIT].rstrip()}..."
+
+    return f"📰 *Yangilik:*\n\n{text}\n\n🕒 {time_part}"
 
 
 def build_sheet_xml(rows):
@@ -558,21 +643,50 @@ def render_html_page(title, content):
 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
 <title>{title}</title>
 <style>
-    body {{ font-family: Arial, sans-serif; background: #f5f7fb; margin: 0; color: #0f172a; }}
-    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 20px; }}
-    .card {{ background: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }}
-    h1, h2, h3 {{ margin-top: 0; }}
-    a.btn, button {{ background: #2563eb; color: white; border: none; border-radius: 8px; padding: 10px 14px; text-decoration: none; cursor: pointer; }}
-    a.btn.danger, button.danger {{ background: #dc2626; }}
-    input, textarea {{ width: 100%; padding: 10px; margin-top: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }}
-    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }}
-    .muted {{ color: #64748b; }}
-    .topnav {{ display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }}
+    :root {{
+        --bg:#f1f5f9;
+        --card:#ffffff;
+        --text:#0f172a;
+        --muted:#64748b;
+        --primary:#2563eb;
+        --danger:#dc2626;
+        --success:#16a34a;
+        --border:#dbe2ee;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{ font-family:Inter,Arial,sans-serif;background:var(--bg);margin:0;color:var(--text); }}
+    .page {{ min-height:100vh; display:flex; justify-content:center; padding:26px 14px; }}
+    .wrap {{ width:100%; max-width:1160px; }}
+    .card {{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 6px 20px rgba(15,23,42,.06); }}
+    .center {{ max-width:760px; margin:0 auto; }}
+    h1,h2,h3 {{ margin:0 0 12px 0; }}
+    p {{ margin:6px 0; line-height:1.5; }}
+    .muted {{ color:var(--muted); }}
+    .btn,button {{ display:inline-block; border:0; border-radius:10px; background:var(--primary); color:#fff; text-decoration:none; padding:10px 14px; cursor:pointer; font-weight:600; }}
+    .btn:hover,button:hover {{ opacity:.95; }}
+    .danger {{ background:var(--danger); }}
+    .success {{ background:var(--success); }}
+    .btn-row {{ display:flex; gap:10px; flex-wrap:wrap; }}
+    input,textarea {{ width:100%; border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-top:6px; margin-bottom:12px; font-size:14px; }}
+    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:14px; }}
+    table {{ width:100%; border-collapse:collapse; }}
+    th,td {{ border-bottom:1px solid var(--border); text-align:left; padding:8px; vertical-align:top; }}
+    .topnav {{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }}
+    .flash {{ border:1px solid #86efac; background:#f0fdf4; color:#14532d; font-weight:700; }}
 </style>
+<script>
+function confirmDelete(url) {{
+    if (confirm("Ushbu yangilikni o‘chirmoqchimisiz?")) {{
+        window.location.href = url;
+    }}
+}}
+</script>
 </head>
 <body>
+<div class='page'>
 <div class='wrap'>
 {content}
+</div>
 </div>
 </body>
 </html>
@@ -583,7 +697,7 @@ def render_reset_form(error_text=""):
     error_block = f"<p style='color:#dc2626;font-weight:bold;'>{error_text}</p>" if error_text else ""
     warning_text = "⚠️ DIQQAT!<br>Bu amal barcha davomat (att.json) ma’lumotlarini O‘CHIRADI!<br><br>Bu amalni qaytarib bo‘lmaydi.<br><br>Davom etasizmi?"
     content = f"""
-    <div class='card' style='max-width:700px; margin:20px auto;'>
+    <div class='card center'>
         <h2>🔄 Tizimni tozalash</h2>
         <form method='post' action='/admin/reset'>
             <label>ADMIN_USERNAME</label>
@@ -593,7 +707,7 @@ def render_reset_form(error_text=""):
             <div style='margin:14px 0;padding:14px;border:2px solid #dc2626;border-radius:10px;background:#fef2f2;font-size:18px;line-height:1.5;'>
                 {warning_text}
             </div>
-            <div style='display:flex;gap:10px;flex-wrap:wrap;'>
+            <div class='btn-row'>
                 <button class='danger' type='submit' name='confirm' value='YES'>YES</button>
                 <button type='submit' name='confirm' value='NO'>NO</button>
             </div>
@@ -603,6 +717,13 @@ def render_reset_form(error_text=""):
     </div>
     """
     return render_html_page("System Reset", content)
+
+
+def safe_user_message(uid, text, reply_markup=None, parse_mode=None):
+    try:
+        bot.send_message(uid, text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception:
+        pass
 
 
 @app.route("/")
@@ -622,7 +743,7 @@ def admin_login():
         error = "Login yoki parol noto‘g‘ri"
 
     content = f"""
-    <div class='card' style='max-width:420px; margin:40px auto;'>
+    <div class='card center' style='max-width:460px;'>
         <h2>🔐 Admin kirish</h2>
         <form method='post'>
             <label>Login</label>
@@ -659,7 +780,7 @@ def dashboard():
             f"<p><b>#{idx}</b> {item.get('text', '')}</p>"
             f"<p class='muted'>Rasm: {image_text}</p>"
             f"<p class='muted'>Vaqt: {item.get('time', '')}</p>"
-            f"<a class='btn danger' href='/delete_news/{idx}'>O‘chirish</a>"
+            f"<button class='danger' onclick=\"confirmDelete('/delete_news/{idx}')\">O‘chirish</button>"
             "</div>"
         )
     if not news_rows:
@@ -680,7 +801,7 @@ def dashboard():
     now = now_local()
     month_stats = all_monthly_statistics(now.year, now.month)
     stat_rows = ""
-    for username in load_teachers().keys():
+    for username in teachers.keys():
         stat = month_stats.get(username, {})
         stat_rows += (
             "<tr>"
@@ -695,19 +816,13 @@ def dashboard():
         "<div class='card'>"
         f"<h2>📊 Oylik analitika ({now.strftime('%Y-%m')})</h2>"
         "<div style='overflow-x:auto;'>"
-        "<table style='width:100%;border-collapse:collapse;'>"
-        "<thead><tr>"
-        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>O‘qituvchi</th>"
-        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Keldi</th>"
-        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Kechikdi</th>"
-        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Uzrli</th>"
-        "<th style='text-align:left;border-bottom:1px solid #cbd5e1;padding:8px;'>Kelmagan</th>"
-        "</tr></thead>"
+        "<table>"
+        "<thead><tr><th>O‘qituvchi</th><th>Keldi</th><th>Kechikdi</th><th>Uzrli</th><th>Kelmagan</th></tr></thead>"
         f"<tbody>{stat_rows}</tbody>"
         "</table></div></div>"
     )
 
-    message_block = f"<div class='card' style='border:2px solid #22c55e;background:#f0fdf4;'><b>{dashboard_message}</b></div>" if dashboard_message else ""
+    message_block = f"<div class='card flash'><b>{dashboard_message}</b></div>" if dashboard_message else ""
 
     content = f"""
     <h1>🏫 Maktab boshqaruv paneli</h1>
@@ -771,17 +886,18 @@ def add_news():
             news = load_news()
             news.append({"text": text, "image": image, "time": current_timestamp()})
             save_news(news)
+            web_session["dashboard_message"] = "✅ Yangilik qo‘shildi"
         return redirect("/dashboard")
 
     content = """
-    <div class='card'>
+    <div class='card center'>
         <h2>📰 Yangilik qo‘shish</h2>
         <form method='post'>
             <label>Matn</label>
             <textarea name='text' rows='5' required></textarea>
             <label>Rasm URL yoki Telegram file_id (ixtiyoriy)</label>
             <input name='image'>
-            <button type='submit'>Saqlash</button>
+            <button type='submit' class='success'>Saqlash</button>
         </form>
         <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
     </div>
@@ -796,6 +912,7 @@ def delete_news(index):
     if 0 <= index < len(news):
         news.pop(index)
         save_news(news)
+        web_session["dashboard_message"] = "✅ Yangilik o‘chirildi"
     return redirect("/dashboard")
 
 
@@ -804,15 +921,16 @@ def delete_news(index):
 def add_school():
     if request.method == "POST":
         save_json("school.json", {"info": request.form.get("text", "")})
+        web_session["dashboard_message"] = "✅ Maktab ma’lumoti yangilandi"
         return redirect("/dashboard")
 
     school = load_school().get("info", "")
     content = f"""
-    <div class='card'>
+    <div class='card center'>
         <h2>🏫 Maktab ma’lumoti</h2>
         <form method='post'>
             <textarea name='text' rows='8'>{school}</textarea>
-            <button type='submit'>Saqlash</button>
+            <button type='submit' class='success'>Saqlash</button>
         </form>
         <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
     </div>
@@ -830,11 +948,12 @@ def add_teacher_info():
             data = load_teacher_info()
             data[username] = text
             save_teacher_info(data)
+            web_session["dashboard_message"] = "✅ O‘qituvchi ma’lumoti saqlandi"
         return redirect("/dashboard")
 
     options = "".join([f"<option value='{name}'>{name}</option>" for name in load_teachers().keys()])
     content = f"""
-    <div class='card'>
+    <div class='card center'>
         <h2>👨‍🏫 O‘qituvchi ma’lumoti</h2>
         <form method='post'>
             <label>Username</label>
@@ -842,7 +961,7 @@ def add_teacher_info():
             <datalist id='teacher-list'>{options}</datalist>
             <label>Ma’lumot</label>
             <textarea name='text' rows='6' required></textarea>
-            <button type='submit'>Saqlash</button>
+            <button type='submit' class='success'>Saqlash</button>
         </form>
         <p><a class='btn' href='/dashboard'>⬅️ Orqaga</a></p>
     </div>
@@ -865,20 +984,28 @@ def set_webhook():
     return "Webhook set"
 
 
+def send_main_menu(uid, headline="🏫 Maktab tizimiga xush kelibsiz"):
+    safe_user_message(uid, f"*{headline}*\n\nQuyidagilardan birini tanlang.", reply_markup=kb_main(), parse_mode="Markdown")
+
+
+def send_cabinet_menu(uid, headline="🔐 Kabinetingizga xush kelibsiz"):
+    safe_user_message(uid, f"*{headline}*\n\n✅ Davomatni belgilang yoki statistikani ko‘ring.", reply_markup=kb_cabinet(), parse_mode="Markdown")
+
+
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     uid = message.chat.id
     bound_teacher = teacher_from_user_id(uid)
     if bound_teacher:
         sessions[uid] = {"ok": True, "u": bound_teacher}
-        bot.send_message(uid, "🔐 Kabinetingizga xush kelibsiz", reply_markup=kb_cabinet())
+        send_cabinet_menu(uid)
         return
 
     user_session = sessions.get(uid)
     if user_session and user_session.get("ok"):
-        bot.send_message(uid, "🔐 Kabinetingizga xush kelibsiz", reply_markup=kb_cabinet())
+        send_cabinet_menu(uid)
     else:
-        bot.send_message(uid, "🏫 Maktab tizimiga xush kelibsiz", reply_markup=kb_main())
+        send_main_menu(uid)
 
 
 @bot.message_handler(content_types=["location"])
@@ -889,7 +1016,7 @@ def handle_location(message):
         return
 
     if not valid_fresh_location(message):
-        bot.send_message(uid, "❌ Lokatsiya juda eski, qayta yuboring.", reply_markup=kb_location_request())
+        safe_user_message(uid, "❌ Lokatsiya eskirgan. Iltimos yangisini yuboring.", reply_markup=kb_location_request())
         return
 
     lat = message.location.latitude
@@ -900,11 +1027,18 @@ def handle_location(message):
         record_attendance(user_session["u"], arrive_status)
         if arrive_status == "Kechikdi":
             register_late_warning(user_session["u"], uid)
-            bot.send_message(uid, "⏰ Kechikdi holati qabul qilindi", reply_markup=kb_cabinet())
+            safe_user_message(uid, "✅ Siz muvaffaqiyatli belgilandingiz!\n\n⏰ Holat: *Kechikdi*", reply_markup=kb_cabinet(), parse_mode="Markdown")
         else:
-            bot.send_message(uid, "✅ Keldi holati qabul qilindi", reply_markup=kb_cabinet())
+            safe_user_message(uid, "✅ Siz muvaffaqiyatli belgilandingiz!\n\n👏 Ajoyib! Siz bugun o‘z vaqtida keldingiz.", reply_markup=kb_cabinet())
     else:
-        bot.send_message(uid, "Siz maktab hududida emassiz ❌", reply_markup=kb_cabinet())
+        center_lat, center_lon = polygon_centroid(SCHOOL_POLYGON)
+        distance = distance_meters(lat, lon, center_lat, center_lon)
+        safe_user_message(
+            uid,
+            f"⚠️ Siz maktab hududidan tashqaridasiz.\n\nTaxminiy masofa: *{distance} m*\nIltimos, hudud ichidan qayta yuboring.",
+            reply_markup=kb_cabinet(),
+            parse_mode="Markdown",
+        )
 
     user_session.pop("step", None)
 
@@ -912,58 +1046,70 @@ def handle_location(message):
 def send_last_news(uid):
     news = load_news()
     if not news:
-        bot.send_message(uid, "Hozircha yangilik yo‘q", reply_markup=kb_main())
+        safe_user_message(uid, "📰 Hozircha yangilik yo‘q.", reply_markup=kb_main())
         return
 
-    bot.send_message(uid, "📰 So‘nggi 5 ta yangilik:", reply_markup=kb_main())
+    safe_user_message(uid, "📰 *So‘nggi 5 ta yangilik*", reply_markup=kb_main(), parse_mode="Markdown")
     for item in news[-5:][::-1]:
         caption = format_news_message(item)
         image = item.get("image")
         if image:
-            bot.send_photo(uid, image, caption=caption[:1024])
+            try:
+                bot.send_photo(uid, image, caption=caption[:1024], parse_mode="Markdown")
+            except Exception:
+                safe_user_message(uid, caption, parse_mode="Markdown")
         else:
-            bot.send_message(uid, caption)
+            safe_user_message(uid, caption, parse_mode="Markdown")
 
 
 def send_statistics(uid, username):
     now = now_local()
     year, month = now.year, now.month
-    counts, month_days = monthly_statistics_for(username, year, month)
-    month_tag = now.strftime("%Y-%m")
+    counts, _ = monthly_statistics_for(username, year, month)
 
     text = (
-        f"📊 Oylik statistika ({month_tag})\n"
-        f"👤 {format_teacher_label(username)}\n\n"
+        "📊 *Oylik hisobot:*\n\n"
         f"✅ Keldi: {counts['Keldi']}\n"
         f"⏰ Kechikdi: {counts['Kechikdi']}\n"
         f"⚠️ Uzrli: {counts['Uzrli']}\n"
-        f"❌ Kelmagan: {counts['Kelmagan']}\n"
-        f"📅 Hisoblangan kunlar: {len(month_days)}"
+        f"❌ Kelmagan: {counts['Kelmagan']}"
     )
-    bot.send_message(uid, text, reply_markup=kb_cabinet())
+    safe_user_message(uid, text, reply_markup=kb_cabinet(), parse_mode="Markdown")
 
 
-def send_history(uid):
+def status_emoji(status):
+    return {
+        "Keldi": "✅ Keldi",
+        "Kechikdi": "⏰ Kechikdi",
+        "Uzrli": "⚠️ Uzrli",
+        "Ketdi": "🚶 Ketdi",
+        "pending_uzrli": "⏳ Uzrli (kutilyapti)",
+        "Uzrli rad etildi": "❌ Uzrli rad etildi",
+    }.get(status, f"❔ {status}")
+
+
+def send_history(uid, username):
     db = load_attendance()
-    if not db:
-        bot.send_message(uid, "📜 Tarix bo‘sh", reply_markup=kb_cabinet())
+    rows = []
+    for date_key in sorted(db.keys(), reverse=True):
+        info = db.get(date_key, {}).get(username)
+        if not info:
+            continue
+        dt = parse_date_safe(date_key)
+        date_label = dt.strftime("%d-%b") if dt else date_key
+        rows.append((date_label, status_emoji(info.get("status", ""))))
+        if len(rows) >= 7:
+            break
+
+    if not rows:
+        safe_user_message(uid, "📜 Sizda tarix yozuvi topilmadi.", reply_markup=kb_cabinet())
         return
 
-    teachers = load_teachers()
-    lines = ["📜 Davomat tarixi"]
-    for date_key in sorted(db.keys(), reverse=True):
-        lines.append(f"\n📅 {date_key}")
-        day_data = db.get(date_key, {})
-        for username in teachers.keys():
-            info = day_data.get(username)
-            if info:
-                lines.append(f"{format_teacher_label(username)} — {info.get('status', '-')} ({info.get('time', '-')})")
-            else:
-                lines.append(f"{format_teacher_label(username)} — Belgilanmagan")
+    blocks = ["📜 *So‘nggi 7 ta davomat:*\n"]
+    for date_label, status in rows:
+        blocks.append(f"📅 {date_label}\n{status}\n")
 
-    text = "\n".join(lines)
-    for i in range(0, len(text), 3800):
-        bot.send_message(uid, text[i : i + 3800], reply_markup=kb_cabinet())
+    safe_user_message(uid, "\n".join(blocks), reply_markup=kb_cabinet(), parse_mode="Markdown")
 
 
 def forward_contact_to_admin(message):
@@ -981,9 +1127,9 @@ def forward_contact_to_admin(message):
     try:
         sent = bot.send_message(CONTACT_RECEIVER_ID, payload)
         admin_reply_map[sent.message_id] = user.id
-        bot.reply_to(message, "Murojaatingiz yuborildi ✅", reply_markup=kb_main())
+        bot.reply_to(message, "✅ Xabaringiz yuborildi", reply_markup=kb_main())
     except Exception:
-        bot.reply_to(message, "Xabar yuborishda xatolik bo‘ldi", reply_markup=kb_main())
+        bot.reply_to(message, "❌ Xabar yuborilmadi. Iltimos keyinroq urinib ko‘ring.", reply_markup=kb_main())
 
 
 def reply_admin_to_user(message):
@@ -1001,7 +1147,7 @@ def reply_admin_to_user(message):
         return False
 
     try:
-        bot.send_message(target_user_id, f"📬 Admin javobi:\n{reply_text}")
+        bot.send_message(target_user_id, f"📬 *Admin javobi*\n\n{reply_text}", parse_mode="Markdown")
         bot.reply_to(message, "✅ Foydalanuvchiga yuborildi")
     except Exception:
         bot.reply_to(message, "❌ Yuborilmadi")
@@ -1010,7 +1156,7 @@ def reply_admin_to_user(message):
 
 def begin_login(uid):
     sessions[uid] = {"step": "login_username"}
-    bot.send_message(uid, "Login kiriting:")
+    safe_user_message(uid, "🔐 *Kabinetga kirish*\n\nLogin kiriting:", parse_mode="Markdown")
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -1031,7 +1177,7 @@ def handle_callbacks(call):
         sessions.setdefault(caller_id, {})["step"] = "waiting_late_admin_message"
         sessions[caller_id]["late_target_id"] = target_id_int
         bot.answer_callback_query(call.id, "Xabar yozing")
-        bot.send_message(caller_id, "O‘qituvchiga yuboriladigan xabarni yozing:")
+        safe_user_message(caller_id, "O‘qituvchiga yuboriladigan xabarni yozing:")
         return
 
     if data.startswith("uzrli_ok:") or data.startswith("uzrli_no:"):
@@ -1055,10 +1201,7 @@ def handle_callbacks(call):
 
         if action == "uzrli_ok":
             record_attendance_for_day(date_key, username, "Uzrli")
-            try:
-                bot.send_message(teacher_uid_int, "Sizning uzrli so'rovingiz tasdiqlandi ✅")
-            except Exception:
-                pass
+            safe_user_message(teacher_uid_int, "✅ Sizning uzrli so'rovingiz tasdiqlandi")
             bot.answer_callback_query(call.id, "Tasdiqlandi")
             try:
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -1072,10 +1215,7 @@ def handle_callbacks(call):
         else:
             db[date_key][username] = {"status": "Uzrli rad etildi", "time": get_time()}
         save_attendance(db)
-        try:
-            bot.send_message(teacher_uid_int, "Sizning uzrli so'rovingiz rad etildi ❌")
-        except Exception:
-            pass
+        safe_user_message(teacher_uid_int, "❌ Sizning uzrli so'rovingiz rad etildi")
         bot.answer_callback_query(call.id, "Bekor qilindi")
         try:
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -1095,7 +1235,7 @@ def message_router(message):
 
     if user_session.get("step") == "waiting_for_message":
         if message.content_type != "text" or not text:
-            bot.send_message(uid, "Faqat matnli xabar yuboring.")
+            safe_user_message(uid, "Faqat matnli xabar yuboring.")
             return
         forward_contact_to_admin(message)
         user_session.pop("step", None)
@@ -1107,18 +1247,18 @@ def message_router(message):
             user_session.pop("late_target_id", None)
             return
         if message.content_type != "text" or not text:
-            bot.send_message(uid, "Faqat matnli xabar yuboring.")
+            safe_user_message(uid, "Faqat matnli xabar yuboring.")
             return
         target_id = user_session.get("late_target_id")
         if not target_id:
             user_session.pop("step", None)
-            bot.send_message(uid, "Maqsadli o‘qituvchi topilmadi.")
+            safe_user_message(uid, "Maqsadli o‘qituvchi topilmadi.")
             return
         try:
-            bot.send_message(int(target_id), f"📬 Admin xabari:\n{text}")
-            bot.send_message(uid, "✅ O‘qituvchiga yuborildi")
+            bot.send_message(int(target_id), f"📬 *Admin xabari*\n\n{text}", parse_mode="Markdown")
+            safe_user_message(uid, "✅ O‘qituvchiga yuborildi")
         except Exception:
-            bot.send_message(uid, "❌ Xabar yuborilmadi")
+            safe_user_message(uid, "❌ Xabar yuborilmadi")
         user_session.pop("step", None)
         user_session.pop("late_target_id", None)
         return
@@ -1129,7 +1269,7 @@ def message_router(message):
     if user_session.get("step") == "login_username":
         sessions[uid]["pending_username"] = text
         sessions[uid]["step"] = "login_password"
-        bot.send_message(uid, "Parol kiriting:")
+        safe_user_message(uid, "Parol kiriting:")
         return
 
     if user_session.get("step") == "login_password":
@@ -1138,36 +1278,36 @@ def message_router(message):
         if teachers.get(username) == hash_password(text):
             if not ensure_teacher_binding(username, uid):
                 sessions.pop(uid, None)
-                bot.send_message(uid, "❌ Bu akkaunt boshqa Telegram ID ga bog‘langan")
+                safe_user_message(uid, "❌ Sizga ruxsat berilmagan")
                 return
             sessions[uid] = {"ok": True, "u": username}
-            bot.send_message(uid, "✅ Muvaffaqiyatli kirildi", reply_markup=kb_cabinet())
+            send_cabinet_menu(uid, "✅ Muvaffaqiyatli kirildi")
         else:
             sessions[uid] = {"step": "login_username"}
-            bot.send_message(uid, "Login yoki parol noto‘g‘ri. Loginni qayta kiriting:")
+            safe_user_message(uid, "❌ Login yoki parol noto‘g‘ri. Loginni qayta kiriting:")
         return
 
-    if text == "⬅️ Orqaga":
+    if text in ("⬅️ Orqaga", "🏠 Asosiy menyu"):
         if user_session.get("ok") and user_session.get("step") == "wait_location":
             user_session.pop("step", None)
-            bot.send_message(uid, "🔐 Kabinet", reply_markup=kb_cabinet())
+            send_cabinet_menu(uid, "🔐 Kabinet")
         else:
             user_session.pop("step", None)
-            bot.send_message(uid, "🏫 Asosiy menyu", reply_markup=kb_main())
+            send_main_menu(uid, "🏠 Asosiy menyu")
         return
 
     if text == "🏫 Maktab":
-        bot.send_message(uid, load_school().get("info", "Ma’lumot yo‘q"), reply_markup=kb_main())
+        safe_user_message(uid, f"🏫 *Maktab ma’lumoti*\n\n{load_school().get('info', 'Ma’lumot yo‘q')}", reply_markup=kb_main(), parse_mode="Markdown")
         return
 
     if text in ("👨‍🏫 O‘qituvchilar", "👨‍🏫 O'qituvchilar"):
-        bot.send_message(uid, "👨‍🏫 O‘qituvchilar ro‘yxati", reply_markup=kb_teachers())
+        safe_user_message(uid, "👨‍🏫 *O‘qituvchilar ro‘yxati*", reply_markup=kb_teachers(), parse_mode="Markdown")
         return
 
     selected_teacher = get_teacher_by_label(text)
     if selected_teacher:
         info = load_teacher_info().get(selected_teacher, "Ma’lumot yo‘q")
-        bot.send_message(uid, f"{format_teacher_label(selected_teacher)}\n\n{info}", reply_markup=kb_teachers())
+        safe_user_message(uid, f"*{format_teacher_label(selected_teacher)}*\n\n{info}", reply_markup=kb_teachers(), parse_mode="Markdown")
         return
 
     if text == "📰 Yangiliklar":
@@ -1176,17 +1316,28 @@ def message_router(message):
 
     if text == "📩 Murojaat":
         sessions.setdefault(uid, {})["step"] = "waiting_for_message"
-        bot.send_message(uid, "Xabaringizni yozing", reply_markup=ReplyKeyboardRemove())
+        safe_user_message(uid, "📩 Xabaringizni yozing.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    if text == "ℹ️ Yordam":
+        help_text = (
+            "ℹ️ *Yordam*\n\n"
+            "• 🔐 Kabinet: login va davomat\n"
+            "• ✅ Keldim: lokatsiya orqali belgilash\n"
+            "• 📊 Statistika: oylik natijalar\n"
+            "• 📩 Murojaat: admin bilan aloqa"
+        )
+        safe_user_message(uid, help_text, reply_markup=kb_main(), parse_mode="Markdown")
         return
 
     if text == "🔐 Kabinet":
         if user_session.get("ok"):
-            bot.send_message(uid, "🔐 Kabinet", reply_markup=kb_cabinet())
+            send_cabinet_menu(uid, "🔐 Kabinet")
             return
         auto_teacher = teacher_from_user_id(uid)
         if auto_teacher:
             sessions[uid] = {"ok": True, "u": auto_teacher}
-            bot.send_message(uid, "✅ Avtomatik kirish bajarildi", reply_markup=kb_cabinet())
+            send_cabinet_menu(uid, "✅ Avtomatik kirish bajarildi")
             return
         begin_login(uid)
         return
@@ -1196,18 +1347,23 @@ def message_router(message):
 
         if text == "✅ Keldim":
             sessions[uid]["step"] = "wait_location"
-            bot.send_message(uid, "Davomat uchun lokatsiya yuboring:", reply_markup=kb_location_request())
+            safe_user_message(
+                uid,
+                "✅ *Davomat belgilash*\n\n📍 Iltimos joylashuvingizni yuboring.",
+                reply_markup=kb_location_request(),
+                parse_mode="Markdown",
+            )
             return
 
         if text == "🚶 Ketdim":
             record_attendance(username, "Ketdi")
-            bot.send_message(uid, "🚶 Ketdi holati saqlandi", reply_markup=kb_cabinet())
+            safe_user_message(uid, "🚶 Ketdi holati saqlandi", reply_markup=kb_cabinet())
             return
 
         if text == "⚠️ Uzrli":
             day = get_today()
             record_attendance(username, "pending_uzrli")
-            bot.send_message(uid, "Admin tasdiqlashini kuting ⏳", reply_markup=kb_cabinet())
+            safe_user_message(uid, "⏳ Uzrli so‘rovingiz adminga yuborildi.", reply_markup=kb_cabinet())
             admin_text = (
                 "⚠️ Uzrli so'rovi!\n\n"
                 f"👤 {username}\n"
@@ -1225,25 +1381,26 @@ def message_router(message):
             return
 
         if text == "📜 Tarix":
-            send_history(uid)
+            send_history(uid, username)
             return
 
         if text == "📤 Export":
             try:
                 send_export_to_admin(uid)
-                bot.send_message(uid, "📤 Export admin ga yuborildi", reply_markup=kb_cabinet())
+                safe_user_message(uid, "📤 Export admin ga yuborildi", reply_markup=kb_cabinet())
             except Exception:
-                bot.send_message(uid, "❌ Export yuborishda xatolik", reply_markup=kb_cabinet())
+                safe_user_message(uid, "❌ Export yuborishda xatolik", reply_markup=kb_cabinet())
             return
 
         if text == "🚪 Chiqish":
             sessions.pop(uid, None)
-            bot.send_message(uid, "🚪 Kabinetdan chiqdingiz", reply_markup=kb_main())
+            send_main_menu(uid, "🚪 Kabinetdan chiqdingiz")
             return
 
-    bot.send_message(uid, "Buyruq tanlang", reply_markup=kb_main())
+    send_main_menu(uid, "Buyruq tanlang")
 
 
+prime_cache()
 load_teachers()
 load_news()
 
