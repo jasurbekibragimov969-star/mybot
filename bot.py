@@ -21,7 +21,7 @@ from telebot.types import (
 )
 
 
-TOKEN = "8665940219:AAGZ8w4g83Zb10c-o6O5B6xNE4mZ7Zv8mxE"
+TOKEN = os.getenv("BOT_TOKEN")
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", "6344661867"))
